@@ -1,5 +1,7 @@
 from panda3d.core import Vec3, Quat
 from .entity import Entity
+# Importáljuk a slotokat az új fájlból
+from .components import WeaponMount, TacticalSlot, ArmorSlot, HullAugment
 import math
 
 # ==============================================================================
@@ -11,6 +13,12 @@ class Ship(Entity):
         self.ship_type = ship_type
         self.is_local = is_local
         
+        # --- FELSZERELÉS SLOTOK (Inventory) ---
+        self.weapon_mounts = []   # Tárolja a WeaponMount objektumokat
+        self.tactical_slots = []  # Tárolja a TacticalSlot objektumokat
+        self.armor_slots = []     # Tárolja az ArmorSlot objektumokat
+        self.hull_augments = []   # Tárolja a HullAugment objektumokat
+
         # Modell betöltése
         self.load_model("models/box", scale=1.5)
         
@@ -18,6 +26,9 @@ class Ship(Entity):
             self.model.setColor(0, 1, 0, 1) # Zöld (Én)
             self.setup_controls()
             self.setup_camera()
+            
+            # TESZT FELSZERELÉS HOZZÁADÁSA (Csak a helyi játékosnak példaként)
+            self.equip_test_items()
         else:
             self.model.setColor(1, 0, 0, 1) # Piros (Ellenfél)
 
@@ -30,6 +41,14 @@ class Ship(Entity):
         # Célpont és Autopilot
         self.autopilot_mode = None
         self.target_entity = None
+
+    def equip_test_items(self):
+        """Példa felszerelések hozzáadása"""
+        self.weapon_mounts.append(WeaponMount("Impulzus Lézer I", damage=15, range=150))
+        self.tactical_slots.append(TacticalSlot("Utánégető", effect_type="speed_boost", value=1.5))
+        self.armor_slots.append(ArmorSlot("Titánium Lemez", armor_hp=200))
+        self.hull_augments.append(HullAugment("Raktér Bővítő", hull_hp=50))
+        print(f"[SHIP] Felszerelve: {len(self.weapon_mounts)} fegyver, {len(self.armor_slots)} páncél.")
 
     def setup_controls(self):
         # MÁR NEM HASZNÁLUNK WASD-T
