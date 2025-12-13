@@ -1,10 +1,23 @@
 from direct.gui.DirectGui import *
-from panda3d.core import TextNode, Vec3
+from panda3d.core import TextNode, Vec3, Vec4
 
 class TargetListUI:
     def __init__(self, game):
         self.game = game
         self.items = {} # {ship_id: (button, label)}
+        
+        # --- STÍLUS DEFINÍCIÓK (Sci-Fi / EVE Theme) ---
+        self.theme = {
+            'bg_color': (0.05, 0.08, 0.1, 0.9),      # Sötét grafit/kék háttér
+            'btn_normal': (0.1, 0.15, 0.2, 0.8),     # Gomb alapállapot
+            'btn_hover': (0.0, 0.6, 0.8, 0.4),       # Gomb rámutatás (Neon cián áttetsző)
+            'btn_click': (0.0, 0.8, 1.0, 0.6),       # Gomb kattintás
+            'text_main': (0.8, 0.9, 1.0, 1),         # Fehér/kékes szöveg
+            'text_accent': (0.0, 0.9, 1.0, 1),       # Neon cián szöveg
+            'border_width': (0.002, 0.002),          # Vékony, finom keret
+            'border_color': (0.3, 0.5, 0.6, 0.5),    # Halvány keret szín
+            'font_scale': 0.04
+        }
         
         # --- NEOCOM (Bal felső menü) ---
         self.neocom_frame = DirectFrame(
@@ -13,98 +26,139 @@ class TargetListUI:
             pos=(-1.7, 0, 0.9) # Bal felső sarok (aspect2d)
         )
 
-        # Inventory Gomb - MÉG NAGYOBB
+        # Inventory Gomb - Modern Sci-Fi Orb stílus
         self.btn_inventory = DirectButton(
-            text="I", text_scale=0.1, # Nagy betű
-            scale=0.18, pos=(0.18, 0, 0), # Nagyobb méret (0.15 -> 0.18)
+            text="I", 
+            text_scale=0.1,
+            text_fg=self.theme['text_accent'],
+            scale=0.18, 
+            pos=(0.18, 0, 0),
             parent=self.neocom_frame,
-            frameColor=(0.2, 0.2, 0.2, 0.8),
+            frameColor=self.theme['btn_normal'],
+            relief=DGG.FLAT, # Letisztult, lapos dizájn
+            borderWidth=self.theme['border_width'],
+            frameSize=(-0.5, 0.5, -0.5, 0.5), # Négyzetesebb/Techno alak
             command=self.game.window_manager.toggle_inventory,
-            text_fg=(1, 1, 1, 1)
         )
-        # Tooltip-szerű felirat (alapból rejtve)
+
+        # Tooltip (Előbb hozzuk létre, mint ahogy bindoljuk!)
         self.lbl_inv_tooltip = DirectLabel(
             parent=self.btn_inventory, 
-            text="Inventory [I]", # Gomb neve + Gyorsgomb
-            scale=0.2, pos=(0,0,-0.8), 
-            text_fg=(1,1,1,1), frameColor=(0,0,0,0.8),
-            text_bg=(0,0,0,1)
+            text="INVENTORY [I]", 
+            text_scale=0.25, 
+            text_font=loader.loadFont("cmtt12"), # Írógép/Tech font ha van (default fallback)
+            pos=(0.8, 0, -0.1), # Jobbra a gombtól
+            text_fg=self.theme['text_main'],
+            frameColor=self.theme['bg_color'],
+            frameSize=(-0.1, 1.5, -0.3, 0.4),
+            relief=DGG.FLAT
         )
         self.lbl_inv_tooltip.hide()
-        # Események kötése (Hover)
-        self.btn_inventory.bind(DGG.ENTER, self.show_tooltip, [self.lbl_inv_tooltip])
-        self.btn_inventory.bind(DGG.EXIT, self.hide_tooltip, [self.lbl_inv_tooltip])
+
+        # Hover effekt hozzáadása (színváltás) - Most már létezik a lbl_inv_tooltip
+        self.btn_inventory.bind(DGG.ENTER, self.on_hover_enter, [self.btn_inventory, self.lbl_inv_tooltip])
+        self.btn_inventory.bind(DGG.EXIT, self.on_hover_exit, [self.btn_inventory, self.lbl_inv_tooltip])
 
 
-        # Market Gomb - MÉG NAGYOBB
+        # Market Gomb - Modern Sci-Fi Orb stílus
         self.btn_market = DirectButton(
-            text="M", text_scale=0.1,
-            scale=0.18, pos=(0.18, 0, -0.4), # Nagyobb méret és térköz
+            text="M", 
+            text_scale=0.1,
+            text_fg=(1, 0.8, 0.2, 1), # Arany/Borostyán akcentus a piachoz
+            scale=0.18, 
+            pos=(0.18, 0, -0.4),
             parent=self.neocom_frame,
-            frameColor=(0.2, 0.2, 0.2, 0.8),
+            frameColor=self.theme['btn_normal'],
+            relief=DGG.FLAT,
+            borderWidth=self.theme['border_width'],
+            frameSize=(-0.5, 0.5, -0.5, 0.5),
             command=self.game.window_manager.toggle_market,
-            text_fg=(1, 1, 0.8, 1)
         )
+
+        # Tooltip (Előbb létrehozva)
         self.lbl_market_tooltip = DirectLabel(
             parent=self.btn_market, 
-            text="Market [M]", # Gomb neve + Gyorsgomb
-            scale=0.2, pos=(0,0,-0.8), 
-            text_fg=(1,1,1,1), frameColor=(0,0,0,0.8),
-            text_bg=(0,0,0,1)
+            text="MARKET [M]", 
+            text_scale=0.25, 
+            pos=(0.8, 0, -0.1), 
+            text_fg=self.theme['text_main'], 
+            frameColor=self.theme['bg_color'],
+            frameSize=(-0.1, 1.5, -0.3, 0.4),
+            relief=DGG.FLAT
         )
         self.lbl_market_tooltip.hide()
-        # Események kötése (Hover)
-        self.btn_market.bind(DGG.ENTER, self.show_tooltip, [self.lbl_market_tooltip])
-        self.btn_market.bind(DGG.EXIT, self.hide_tooltip, [self.lbl_market_tooltip])
+
+        # Hover effekt hozzáadása
+        self.btn_market.bind(DGG.ENTER, self.on_hover_enter, [self.btn_market, self.lbl_market_tooltip])
+        self.btn_market.bind(DGG.EXIT, self.on_hover_exit, [self.btn_market, self.lbl_market_tooltip])
 
         # --- EREDETI TARGET LIST ---
-        # Fő konténer (Jobb oldalt)
+        # Fő konténer (Jobb oldalt) - Áttetszőbb, high-tech panel
         self.frame = DirectFrame(
-            frameColor=(0, 0, 0, 0.5),
+            frameColor=self.theme['bg_color'],
             frameSize=(-0.4, 0.4, -0.6, 0.6),
-            pos=(1.3, 0, 0) # Jobb szélre tolva
+            pos=(1.3, 0, 0),
+            relief=DGG.FLAT,
+            borderWidth=self.theme['border_width'],
         )
         
         self.title = DirectLabel(
-            text="CÉLPONTOK",
-            scale=0.05,
-            pos=(0, 0, 0.5),
+            text="TARGETS",
+            scale=0.06,
+            pos=(0, 0, 0.52),
             parent=self.frame,
-            text_fg=(1, 1, 1, 1),
-            frameColor=(0,0,0,0)
+            text_fg=self.theme['text_accent'],
+            frameColor=(0,0,0,0),
+            text_font=loader.loadFont("cmtt12") # Tech stílusú betűtípus
         )
 
-        # Műveleti menü (alapból rejtve)
+        # Műveleti menü (Context Menu) - Sötét üveg hatás
         self.context_menu = DirectFrame(
-            frameColor=(0.1, 0.1, 0.1, 0.95),
+            frameColor=(0.05, 0.05, 0.05, 0.98),
             frameSize=(-0.3, 0.3, -0.35, 0.35),
             pos=(0, 0, 0),
-            parent=aspect2d
+            parent=aspect2d,
+            relief=DGG.RIDGE,
+            borderWidth=(0.005, 0.005),
+            # borderColor paraméter eltávolítva, mivel a DirectFrame nem támogatja közvetlenül
         )
         self.context_menu.hide()
         
         # --- MENÜ GOMBOK ---
-        btn_props = {'scale': 0.05, 'frameSize': (-5, 5, -0.8, 0.8), 'parent': self.context_menu}
+        # Közös stílus a menü gomboknak
+        btn_props = {
+            'scale': 0.05, 
+            'frameSize': (-5, 5, -0.8, 0.8), 
+            'parent': self.context_menu,
+            'relief': DGG.FLAT,
+            'frameColor': (0.2, 0.2, 0.2, 0.0), # Átlátszó háttér alapból
+            # 'text_fg': self.theme['text_main'], # ELTÁVOLÍTVA: Egyedi gomboknál adjuk meg
+            'text_align': TextNode.ACenter,
+            'borderWidth': (0,0)
+        }
 
         self.btn_lock = DirectButton(
-            text="Célpont Kijelölése (Lock)", pos=(0, 0, 0.2),
+            text="LOCK TARGET", pos=(0, 0, 0.2),
             command=self.on_context_action, extraArgs=["lock"],
+            text_fg=self.theme['text_accent'], # Kiemelt szín
             **btn_props
         )
         self.btn_follow = DirectButton(
-            text="Megközelítés (Follow)", pos=(0, 0, 0.05),
+            text="APPROACH", pos=(0, 0, 0.05),
             command=self.on_context_action, extraArgs=["follow"],
+            text_fg=self.theme['text_main'],
             **btn_props
         )
         self.btn_orbit = DirectButton(
-            text="Keringés (Orbit)", pos=(0, 0, -0.1),
+            text="ORBIT", pos=(0, 0, -0.1),
             command=self.on_context_action, extraArgs=["orbit"],
+            text_fg=self.theme['text_main'],
             **btn_props
         )
         self.btn_cancel = DirectButton(
-            text="Mégse", pos=(0, 0, -0.25),
+            text="CANCEL", pos=(0, 0, -0.25),
             command=self.hide_context_menu,
-            frameColor=(0.5, 0, 0, 1),
+            text_fg=(1, 0.3, 0.3, 1), # Pirosas a Mégse gombnak
             **btn_props
         )
         
@@ -114,11 +168,14 @@ class TargetListUI:
         # Alapból elrejtjük a HUD-ot
         self.hide()
 
-    def show_tooltip(self, tooltip, event):
-        tooltip.show()
+    # --- Hover effektek a modern UI-hoz ---
+    def on_hover_enter(self, btn, tooltip, event):
+        btn['frameColor'] = self.theme['btn_hover']
+        if tooltip: tooltip.show()
 
-    def hide_tooltip(self, tooltip, event):
-        tooltip.hide()
+    def on_hover_exit(self, btn, tooltip, event):
+        btn['frameColor'] = self.theme['btn_normal']
+        if tooltip: tooltip.hide()
 
     def show(self):
         self.frame.show()
@@ -148,25 +205,31 @@ class TargetListUI:
             active_ids.append(ship_id)
             dist = (ship.get_pos() - my_pos).length()
             
-            text_str = f"{ship.ship_type} | {ship.name}\n{dist:.1f}m"
+            # Formázott szöveg: Típus (kicsi) | Név (Nagy) | Távolság
+            text_str = f"{ship.ship_type.upper()}\n{ship.name}\n{dist:.0f} M"
             
             if ship_id in self.items:
                 btn = self.items[ship_id]
                 btn['text'] = text_str
                 # Highlight ha kijelölt
                 if self.selected_target_id == ship_id:
-                    btn['frameColor'] = (0.5, 0.5, 0, 1) # Arany/Sárgás
+                    btn['frameColor'] = (0.0, 0.4, 0.6, 0.8) # Aktív kék
+                    btn['borderWidth'] = (0.05, 0.05)
                 else:
-                    btn['frameColor'] = (0.3, 0.3, 0.3, 1) # Szürke
+                    btn['frameColor'] = (0.1, 0.12, 0.15, 0.8) # Passzív sötét
+                    btn['borderWidth'] = (0, 0)
             else:
-                # Új sor létrehozása
+                # Új sor létrehozása - Listaelem stílus
                 btn = DirectButton(
                     text=text_str,
-                    scale=0.04,
+                    scale=0.035,
                     pos=(0, 0, y_pos),
                     parent=self.frame,
-                    frameSize=(-8, 8, -1.5, 1.5),
-                    # Bal klikkre most már menü nyílik
+                    frameSize=(-10, 10, -1.8, 1.8),
+                    frameColor=(0.1, 0.12, 0.15, 0.8),
+                    relief=DGG.FLAT,
+                    text_align=TextNode.ACenter,
+                    text_fg=self.theme['text_main'],
                     command=self.open_target_menu,
                     extraArgs=[ship_id]
                 )
@@ -201,11 +264,8 @@ class TargetListUI:
         """Gombnyomás a menüben"""
         if self.active_context_target is not None:
             if action == "lock":
-                # Csak kijelölés
                 self.select_target(self.active_context_target)
             else:
-                # Robotpilóta parancsok (Follow/Orbit)
-                # Ezek automatikusan kijelölik a célpontot is
                 self.select_target(self.active_context_target)
                 self.game.set_autopilot(self.active_context_target, action)
         
