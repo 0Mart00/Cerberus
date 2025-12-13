@@ -1,4 +1,20 @@
 # ==============================================================================
+# ENUMS & CONSTANTS
+# ==============================================================================
+class DamageType:
+    """A négy alapvető sebzéstípus"""
+    IMPACT = "Impact"           # Becsapódás (Kinetikus)
+    THERMIC = "Thermic"         # Hő (Lézer, Plazma)
+    IONIC = "Ionic"             # Ion (Elektromágneses)
+    DETONATION = "Detonation"   # Robbanás (Rakéta, Akna)
+
+class RelicType:
+    """Relic működési módok"""
+    PASSIVE = "Passive"         # Állandó bónusz
+    ACTIVE = "Active"           # Aktiválható képesség
+    TRIGGERED = "Triggered"     # Feltételhez kötött (pl. találatkor)
+
+# ==============================================================================
 # COMPONENT CLASSES (Felszerelés Osztályok)
 # ==============================================================================
 
@@ -12,8 +28,9 @@ class ShipComponent:
 
 class WeaponMount(ShipComponent):
     """Fegyver foglalat: Sebzés, lőtáv, újratöltés"""
-    def __init__(self, name="Alap Lézer", damage=10.0, range=100.0, cooldown=1.0):
+    def __init__(self, name="Alap Lézer", damage_type=DamageType.THERMIC, damage=10.0, range=100.0, cooldown=1.0):
         super().__init__(name)
+        self.damage_type = damage_type
         self.damage = damage
         self.range = range
         self.cooldown = cooldown
@@ -28,14 +45,23 @@ class TacticalSlot(ShipComponent):
 
 class ArmorSlot(ShipComponent):
     """Páncélzat: Extra védelem és ellenállás"""
-    def __init__(self, name="Nanofiber Páncél", armor_hp=100.0, resistance=0.1):
+    def __init__(self, name="Nanofiber Páncél", armor_hp=100.0, resistance_type=DamageType.IMPACT, resistance_val=0.1):
         super().__init__(name)
         self.armor_hp = armor_hp
-        self.resistance = resistance # 0.0 - 1.0 (százalékos sebzés csökkentés)
+        # Melyik típusra ad ellenállást
+        self.resistance_bonus = {resistance_type: resistance_val}
 
 class HullAugment(ShipComponent):
     """Burkolat kiegészítő: Strukturális épség és passzív bónuszok"""
     def __init__(self, name="Szerkezeti Merevítő", hull_hp=200.0, agility_penalty=0.0):
         super().__init__(name)
         self.hull_hp = hull_hp
-        self.agility_penalty = agility_penalty # Mozgékonyság csökkenés (pl. nehéz lemezek)
+        self.agility_penalty = agility_penalty
+
+class RelicSlot(ShipComponent):
+    """Ősi technológia: Különleges módosítók"""
+    def __init__(self, name="Ismeretlen Ereklye", relic_type=RelicType.PASSIVE, modifiers=None):
+        super().__init__(name)
+        self.relic_type = relic_type
+        # Statisztika módosítók szótára, pl. {'shield_recharge': 1.2}
+        self.modifiers = modifiers if modifiers else {}

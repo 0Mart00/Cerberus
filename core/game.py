@@ -5,6 +5,9 @@ import random
 
 from ui.menus import MainMenu
 from ui.hud import TargetListUI
+# Importáljuk az új ablakkezelőt
+from ui.windows import WindowManager
+
 from net.server import GameServer
 from net.client import GameClient
 from net.protocol import create_pos_datagram
@@ -20,8 +23,12 @@ class CerberusGame(ShowBase):
         # Rendszerek
         self.server = None
         self.client = GameClient(self)
+        
+        # Új ablak kezelő inicializálása
+        self.window_manager = WindowManager(self)
+        
         self.menu = MainMenu(self)
-        self.hud = TargetListUI(self) # Új HUD (Most már rejtve indul)
+        self.hud = TargetListUI(self) # A HUD már használja a window_manager-t
         
         # Játékállapot
         self.local_ship = None
@@ -67,7 +74,7 @@ class CerberusGame(ShowBase):
 
     def start_gameplay(self):
         self.menu.hide()
-        self.hud.show() # Most jelenítjük meg a célpont listát
+        self.hud.show() # Most jelenítjük meg a célpont listát és a menüket
         
         # Saját hajó létrehozása
         self.local_ship = Ship(self, self.my_id, is_local=True, name="Hős", ship_type="Vezérhajó")

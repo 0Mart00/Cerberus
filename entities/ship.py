@@ -1,7 +1,10 @@
 from panda3d.core import Vec3, Quat
 from .entity import Entity
-# Importáljuk a slotokat az új fájlból
-from .components import WeaponMount, TacticalSlot, ArmorSlot, HullAugment
+# Importáljuk a slotokat és típusokat
+from .components import (
+    WeaponMount, TacticalSlot, ArmorSlot, HullAugment, RelicSlot,
+    DamageType, RelicType
+)
 import math
 
 # ==============================================================================
@@ -13,50 +16,92 @@ class Ship(Entity):
         self.ship_type = ship_type
         self.is_local = is_local
         
-        # --- FELSZERELÉS SLOTOK (Inventory) ---
-        self.weapon_mounts = []   # Tárolja a WeaponMount objektumokat
-        self.tactical_slots = []  # Tárolja a TacticalSlot objektumokat
-        self.armor_slots = []     # Tárolja az ArmorSlot objektumokat
-        self.hull_augments = []   # Tárolja a HullAugment objektumokat
+        # --- ALAP STATISZTIKÁK ---
+        self.max_hp = 1000.0
+        self.hp = self.max_hp
+        self.max_shield = 500.0
+        self.shield = self.max_shield
+        self.shield_regen = 5.0 
+        self.max_armor = 200.0
+        self.armor = self.max_armor
+        self.max_capacitor = 100.0
+        self.capacitor = self.max_capacitor
+        self.capacitor_regen = 2.0 
 
-        # Modell betöltése
-        self.load_model("models/box", scale=1.5)
-        
-        if self.is_local:
-            self.model.setColor(0, 1, 0, 1) # Zöld (Én)
-            self.setup_controls()
-            self.setup_camera()
-            
-            # TESZT FELSZERELÉS HOZZÁADÁSA (Csak a helyi játékosnak példaként)
-            self.equip_test_items()
-        else:
-            self.model.setColor(1, 0, 0, 1) # Piros (Ellenfél)
+        # --- ELLENÁLLÁSOK ÉS BÓNUSZOK ---
+        self.resistance = {
+            DamageType.IMPACT: 0.0,
+            DamageType.THERMIC: 0.0,
+            DamageType.IONIC: 0.0,
+            DamageType.DETONATION: 0.0
+        }
+        self.damage_bonus = {
+            DamageType.IMPACT: 1.0,
+            DamageType.THERMIC: 1.0,
+            DamageType.IONIC: 1.0,
+            DamageType.DETONATION: 1.0
+        }
+        self.modifiers = {
+            'speed': 1.0,
+            'agility': 1.0,
+            'scan_res': 1.0
+        }
+
+        # --- FELSZERELÉS SLOTOK ---
+        self.weapon_mounts = []   
+        self.tactical_slots = []  
+        self.armor_slots = []     
+        self.hull_augments = []   
+        self.relic_slots = 3
+        self.relics = []     
 
         # --- FIZIKA VÁLTOZÓK ---
         self.velocity = Vec3(0, 0, 0)
-        self.max_speed = 40.0
-        self.turn_speed = 3.0
-        self.drag = 1.5 # Erősebb fékezés, ha nincs célpont
+        self.base_max_speed = 40.0
+        self.base_turn_speed = 3.0
+        self.drag = 1.5
         
-        # Célpont és Autopilot
         self.autopilot_mode = None
         self.target_entity = None
 
+        # Modell betöltése
+        self.load_model("models/SpaceShip", scale=1.0)
+        
+        if self.is_local:
+            self.model.setColor(1, 1, 1, 1)
+            self.setup_controls()
+            self.setup_camera()
+            self.equip_test_items()
+        else:
+            self.model.setColor(1, 0, 0, 1)
+
+    @property
+    def max_speed(self):
+        return self.base_max_speed * self.modifiers.get('speed', 1.0)
+
+    @property
+    def turn_speed(self):
+        return self.base_turn_speed * self.modifiers.get('agility', 1.0)
+
     def equip_test_items(self):
-        """Példa felszerelések hozzáadása"""
-        self.weapon_mounts.append(WeaponMount("Impulzus Lézer I", damage=15, range=150))
+        self.weapon_mounts.append(WeaponMount("Impulzus Lézer I", damage_type=DamageType.THERMIC, damage=15, range=150))
         self.tactical_slots.append(TacticalSlot("Utánégető", effect_type="speed_boost", value=1.5))
-        self.armor_slots.append(ArmorSlot("Titánium Lemez", armor_hp=200))
+        self.armor_slots.append(ArmorSlot("Titánium Lemez", armor_hp=200, resistance_type=DamageType.IMPACT, resistance_val=0.2))
         self.hull_augments.append(HullAugment("Raktér Bővítő", hull_hp=50))
-        print(f"[SHIP] Felszerelve: {len(self.weapon_mounts)} fegyver, {len(self.armor_slots)} páncél.")
+        self.relics.append(RelicSlot("Ősi Pajzs Generátor", relic_type=RelicType.PASSIVE, modifiers={'shield_max': 1.2}))
+        print(f"[SHIP] Stats - HP: {self.hp}, Shield: {self.shield}, Armor: {self.armor}")
 
     def setup_controls(self):
         # MÁR NEM HASZNÁLUNK WASD-T
         # A mozgás kizárólag célpont kijelöléssel történik
-        pass
+        
+        # --- UI GYORSGOMBOK ---
+        # I = Inventory, M = Market
+        if hasattr(self.manager, 'window_manager'):
+            self.accept("i", self.manager.window_manager.toggle_inventory)
+            self.accept("m", self.manager.window_manager.toggle_market)
     
     def setup_camera(self):
-        # --- KAMERA IRÁNYÍTÁS (TPS Free Look) ---
         self.cam_dist = 40.0
         self.cam_h = 0.0
         self.cam_p = -20.0
@@ -87,11 +132,14 @@ class Ship(Entity):
         if not self.is_local:
             return
 
-        # Ha van célpontunk, menjünk oda (vagy kövessük a parancsot)
+        if self.shield < self.max_shield:
+            self.shield = min(self.max_shield, self.shield + self.shield_regen * dt)
+        if self.capacitor < self.max_capacitor:
+            self.capacitor = min(self.max_capacitor, self.capacitor + self.capacitor_regen * dt)
+
         if self.target_entity and self.target_entity.model:
             self.run_autopilot(dt)
         else:
-            # Ha nincs célpont, álljunk meg (Lassulás)
             if self.velocity.length() > 0.1:
                 self.velocity *= (1.0 - self.drag * dt)
                 self.model.setPos(self.model.getPos() + self.velocity * dt)
@@ -125,30 +173,39 @@ class Ship(Entity):
             self.camera_pivot.removeNode()
         super().destroy()
 
-    # --- FIZIKA ÉS MOZGÁS LOGIKA ---
     def update_orientation(self, dt):
+        """Kezeli a hajó forgását globális térben"""
         target_quat = None
         current_quat = self.model.getQuat()
 
-        # Mindig a célpont felé fordulunk, ha van
+        # 1. Prioritás: Célpont felé fordulás
         if self.target_entity and self.target_entity.model:
             to_target = self.target_entity.get_pos() - self.model.getPos()
             if to_target.length_squared() > 0.1:
-                temp_node = self.model.attachNewNode("temp")
+                # JAVÍTÁS: A render-hez (globális tér) csatoljuk az ideiglenes node-ot,
+                # így a lookAt a valós, globális irányt számolja ki.
+                temp_node = render.attachNewNode("temp")
+                temp_node.setPos(self.model.getPos())
                 temp_node.lookAt(self.target_entity.model)
                 target_quat = temp_node.getQuat()
                 temp_node.removeNode()
-        # Ha nincs célpont, de mozgunk, akkor a mozgás irányába
+                
+        # 2. Prioritás: Mozgás irányába fordulás (ha nincs célpont)
         elif self.velocity.length() > 1.0:
-            temp_node = self.model.attachNewNode("temp")
+            temp_node = render.attachNewNode("temp")
+            temp_node.setPos(self.model.getPos())
             temp_node.lookAt(self.model.getPos() + self.velocity)
             target_quat = temp_node.getQuat()
             temp_node.removeNode()
 
         if target_quat:
+            # Interpoláció (N-Lerp)
             t = min(1.0, self.turn_speed * dt)
+            
+            # Legrövidebb út ellenőrzése (kvaternióknál a -Q és Q ugyanazt a forgást jelenti)
             if current_quat.dot(target_quat) < 0:
                 target_quat = target_quat * -1
+                
             new_quat = current_quat * (1.0 - t) + target_quat * t
             new_quat.normalize()
             self.model.setQuat(new_quat)
@@ -162,14 +219,11 @@ class Ship(Entity):
         
         self.velocity = Vec3(0,0,0)
         
-        # Alapértelmezett viselkedés: Megközelítés (Follow), ha nincs más mód beállítva
         mode = self.autopilot_mode if self.autopilot_mode else "follow"
 
         if mode == "follow":
-            # 2 méteres távolságig megyünk
             if distance > 2.0:
                 self.velocity = direction * (self.max_speed * 0.8)
-        
         elif mode == "orbit":
             if distance > 35.0:
                  self.velocity = direction * (self.max_speed * 0.8)
