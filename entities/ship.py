@@ -8,8 +8,6 @@ import math
 class Ship(Entity):
     def __init__(self, manager, ship_id, is_local=False, name="Ismeretlen", ship_type="Vadász"):
         super().__init__(manager, ship_id, name, ship_type)
-        # JAVÍTÁS: A HUD a ship_type-ot keresi, ezért ezt itt is eltároljuk,
-        # még akkor is, ha az ősosztályban már van entity_type.
         self.ship_type = ship_type
         self.is_local = is_local
         
@@ -25,25 +23,18 @@ class Ship(Entity):
 
         # --- FIZIKA VÁLTOZÓK ---
         self.velocity = Vec3(0, 0, 0)
-        self.acceleration = 20.0
         self.max_speed = 40.0
         self.turn_speed = 3.0
-        self.drag = 0.5
+        self.drag = 1.5 # Erősebb fékezés, ha nincs célpont
         
         # Célpont és Autopilot
         self.autopilot_mode = None
         self.target_entity = None
 
     def setup_controls(self):
-        self.key_map = {"up": False, "down": False, "left": False, "right": False}
-        self.accept("w", self.update_key, ["up", True])
-        self.accept("w-up", self.update_key, ["up", False])
-        self.accept("s", self.update_key, ["down", True])
-        self.accept("s-up", self.update_key, ["down", False])
-        self.accept("a", self.update_key, ["left", True])
-        self.accept("a-up", self.update_key, ["left", False])
-        self.accept("d", self.update_key, ["right", True])
-        self.accept("d-up", self.update_key, ["right", False])
+        # MÁR NEM HASZNÁLUNK WASD-T
+        # A mozgás kizárólag célpont kijelöléssel történik
+        pass
     
     def setup_camera(self):
         # --- KAMERA IRÁNYÍTÁS (TPS Free Look) ---
@@ -73,20 +64,18 @@ class Ship(Entity):
     def adjust_zoom(self, amount):
         self.cam_dist = max(10.0, min(100.0, self.cam_dist + amount))
 
-    def update_key(self, key, value):
-        self.key_map[key] = value
-        if value:
-            self.autopilot_mode = None
-
     def update(self, dt):
         if not self.is_local:
             return
 
-        # Autopilot vagy Kézi vezérlés
-        if self.autopilot_mode and self.target_entity:
+        # Ha van célpontunk, menjünk oda (vagy kövessük a parancsot)
+        if self.target_entity and self.target_entity.model:
             self.run_autopilot(dt)
         else:
-            self.run_physics_controls(dt)
+            # Ha nincs célpont, álljunk meg (Lassulás)
+            if self.velocity.length() > 0.1:
+                self.velocity *= (1.0 - self.drag * dt)
+                self.model.setPos(self.model.getPos() + self.velocity * dt)
             
         self.update_orientation(dt)
         self.update_camera(dt)
@@ -122,6 +111,7 @@ class Ship(Entity):
         target_quat = None
         current_quat = self.model.getQuat()
 
+        # Mindig a célpont felé fordulunk, ha van
         if self.target_entity and self.target_entity.model:
             to_target = self.target_entity.get_pos() - self.model.getPos()
             if to_target.length_squared() > 0.1:
@@ -129,6 +119,7 @@ class Ship(Entity):
                 temp_node.lookAt(self.target_entity.model)
                 target_quat = temp_node.getQuat()
                 temp_node.removeNode()
+        # Ha nincs célpont, de mozgunk, akkor a mozgás irányába
         elif self.velocity.length() > 1.0:
             temp_node = self.model.attachNewNode("temp")
             temp_node.lookAt(self.model.getPos() + self.velocity)
@@ -143,25 +134,6 @@ class Ship(Entity):
             new_quat.normalize()
             self.model.setQuat(new_quat)
 
-    def run_physics_controls(self, dt):
-        quat = self.model.getQuat()
-        forward = quat.getForward()
-        right = quat.getRight()
-        accel_vec = Vec3(0, 0, 0)
-
-        if self.key_map["up"]: accel_vec += forward * 1.0
-        if self.key_map["down"]: accel_vec -= forward * 0.5
-        if self.key_map["right"]: accel_vec += right * 0.8
-        if self.key_map["left"]: accel_vec -= right * 0.8
-
-        self.velocity += accel_vec * (self.acceleration * dt)
-        self.velocity *= (1.0 - self.drag * dt)
-        if self.velocity.length() > self.max_speed:
-            self.velocity.normalize()
-            self.velocity *= self.max_speed
-
-        self.model.setPos(self.model.getPos() + self.velocity * dt)
-
     def run_autopilot(self, dt):
         if not self.target_entity.model: return
         
@@ -171,10 +143,15 @@ class Ship(Entity):
         
         self.velocity = Vec3(0,0,0)
         
-        if self.autopilot_mode == "follow":
-            if distance > 1.0:
+        # Alapértelmezett viselkedés: Megközelítés (Follow), ha nincs más mód beállítva
+        mode = self.autopilot_mode if self.autopilot_mode else "follow"
+
+        if mode == "follow":
+            # 2 méteres távolságig megyünk
+            if distance > 2.0:
                 self.velocity = direction * (self.max_speed * 0.8)
-        elif self.autopilot_mode == "orbit":
+        
+        elif mode == "orbit":
             if distance > 35.0:
                  self.velocity = direction * (self.max_speed * 0.8)
             else:
