@@ -5,13 +5,13 @@ import random
 
 from ui.menus import MainMenu
 from ui.hud import TargetListUI
-# Importáljuk az új ablakkezelőt
 from ui.windows import WindowManager
 
 from net.server import GameServer
 from net.client import GameClient
 from net.protocol import create_pos_datagram
-from entities.ship import Ship
+# Importáljuk az összes entitás osztályt
+from entities import Ship, Asteroid, Planet, Wreck, Stargate 
 
 class CerberusGame(ShowBase):
     def __init__(self):
@@ -24,15 +24,14 @@ class CerberusGame(ShowBase):
         self.server = None
         self.client = GameClient(self)
         
-        # Új ablak kezelő inicializálása
         self.window_manager = WindowManager(self)
         
         self.menu = MainMenu(self)
-        self.hud = TargetListUI(self) # A HUD már használja a window_manager-t
+        self.hud = TargetListUI(self)
         
         # Játékállapot
         self.local_ship = None
-        self.remote_ships = {} # {id: Ship}
+        self.remote_ships = {} # {id: Entity} - Most már minden entitás itt van
         self.my_id = 0 
 
     def start_host(self):
@@ -40,30 +39,53 @@ class CerberusGame(ShowBase):
         self.server = GameServer(self)
         if self.server.start():
             self.my_id = 1
-            # Entitások generálása a Hostnak
+            # Entitások generálása a Hostnak (itt hívjuk meg az új logikát)
             self.spawn_test_entities()
             self.start_gameplay()
 
     def spawn_test_entities(self):
         """Véletlenszerű objektumok elhelyezése a teszteléshez"""
-        types = ["Aszteroida", "Roncs", "Kalóz Drón", "Teherhajó"]
         
-        for i in range(5):
+        ENTITY_CLASSES = {
+            "Aszteroida": Asteroid,
+            "Roncs": Wreck,
+            "Csillagkapu": Stargate,
+            "Bolygó": Planet,
+            "NPC Hajó": Ship
+        }
+        
+        # Statikus, nagy bolygó elhelyezése
+        planet_id = 1000
+        # A Planet class inicializálja a Panda3D gömb modellt.
+        planet = Planet(self, planet_id, name="Nexus Bolygó")
+        planet.set_pos(1000, 1000, 0)
+        self.remote_ships[planet_id] = planet
+        
+        # Különböző entitások generálása
+        for i in range(10):
             entity_id = 200 + i
-            e_type = random.choice(types)
-            e_name = f"Objektum-{i+101}"
             
-            # Létrehozunk egy 'Ship' példányt entitásként
-            entity = Ship(self, entity_id, is_local=False, name=e_name, ship_type=e_type)
+            e_type_name = random.choice(list(ENTITY_CLASSES.keys()))
+            EntityClass = ENTITY_CLASSES[e_type_name]
             
+            e_name = f"{e_type_name}-{i+1}"
+            
+            # Entitás inicializálása a megfelelő osztállyal.
+            # Minden Entity osztály (Ship, Asteroid, Planet, stb.) felelős 
+            # a saját Panda3D NodePath (objektum) létrehozásáért (load/generate).
+            if EntityClass == Ship:
+                entity = EntityClass(self, entity_id, is_local=False, name=e_name, ship_type="Drón")
+            else:
+                entity = EntityClass(self, entity_id, name=e_name)
+
             # Véletlenszerű pozíció
-            x = random.uniform(-100, 100)
-            y = random.uniform(-100, 100)
-            z = random.uniform(-20, 20)
+            x = random.uniform(-500, 500)
+            y = random.uniform(-500, 500)
+            z = random.uniform(-50, 50)
             entity.set_pos(x, y, z)
             
             self.remote_ships[entity_id] = entity
-            print(f"[SYSTEM] Entitás létrehozva: {e_name} ({e_type}) @ {x:.1f}, {y:.1f}")
+            print(f"[SYSTEM] Entitás létrehozva: {e_name} ({e_type_name}) @ {x:.1f}, {y:.1f}")
 
     def join_game(self):
         """Csatlakozás kliensként"""
@@ -74,13 +96,13 @@ class CerberusGame(ShowBase):
 
     def start_gameplay(self):
         self.menu.hide()
-        self.hud.show() # Most jelenítjük meg a célpont listát és a menüket
+        self.hud.show() 
         
         # Saját hajó létrehozása
         self.local_ship = Ship(self, self.my_id, is_local=True, name="Hős", ship_type="Vezérhajó")
         self.local_ship.set_pos(0, 0, 0) # 0,0,0 az űr közepe
         
-        # Kamera a hajóra
+        # Kamera a hajóra (a Ship osztályban van a kamera pivot)
         self.camera.reparentTo(self.local_ship.model)
         self.camera.setPos(0, -30, 10)
         self.camera.lookAt(self.local_ship.model)
@@ -88,20 +110,22 @@ class CerberusGame(ShowBase):
         # Loopok
         taskMgr.add(self.update_loop, "GameUpdateLoop")
 
-    def select_target(self, ship_id):
+    def select_target(self, entity_id):
         """HUD hívja meg: Beállítja az aktív célpontot a hajónak"""
-        if self.local_ship and ship_id in self.remote_ships:
-            target = self.remote_ships[ship_id]
+        if self.local_ship and entity_id in self.remote_ships:
+            target = self.remote_ships[entity_id]
             self.local_ship.target_entity = target
             print(f"[GAME] Célpont befogva: {target.name}")
 
-    def set_autopilot(self, target_id, mode):
+    def set_autopilot(self, entity_id, mode):
         """Utasítás a hajónak (HUD-ról jön)"""
-        if target_id in self.remote_ships:
-            target_ship = self.remote_ships[target_id]
-            print(f"Robotpilóta: {mode} -> {target_ship.name}")
-            self.local_ship.target_entity = target_ship
-            self.local_ship.autopilot_mode = mode
+        if entity_id in self.remote_ships:
+            target_entity = self.remote_ships[entity_id]
+            # Csak a Ship objektumok tudnak robotpilótát futtatni
+            if isinstance(target_entity, Ship) or target_entity.entity_type in ["Aszteroida", "Roncs", "Csillagkapu", "Bolygó"]:
+                print(f"Robotpilóta: {mode} -> {target_entity.name}")
+                self.local_ship.target_entity = target_entity
+                self.local_ship.autopilot_mode = mode
 
     def update_loop(self, task):
         dt = globalClock.getDt()
@@ -109,10 +133,14 @@ class CerberusGame(ShowBase):
         if self.local_ship:
             self.local_ship.update(dt)
             
-            # HUD frissítése a távoli hajókkal
+            # Frissítjük az összes entitást (bár csak a Ship-ek csinálnak valamit)
+            for entity in self.remote_ships.values():
+                entity.update(dt)
+
+            # HUD frissítése a távoli entitásokkal
             self.hud.update_list(self.local_ship, self.remote_ships)
 
-            # Pozíció küldése hálózaton
+            # Pozíció küldése hálózaton (csak a hajó pozíciója érdekes)
             pos = self.local_ship.get_pos()
             dg = create_pos_datagram(self.my_id, pos.x, pos.y, pos.z)
             self.client.send(dg)
@@ -129,7 +157,7 @@ class CerberusGame(ShowBase):
 
         if sender_id not in self.remote_ships:
             print(f"Új hajó észlelve: ID {sender_id}")
-            # Véletlenszerű nevet adunk neki demonstrációként
+            # Hálózatról érkező új entitás mindig Ship (egyelőre)
             new_ship = Ship(self, sender_id, is_local=False, name=f"Ellenség-{sender_id}", ship_type="Drón")
             self.remote_ships[sender_id] = new_ship
         

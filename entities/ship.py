@@ -1,9 +1,9 @@
-from panda3d.core import Vec3, Quat
+from panda3d.core import Vec3, Quat, CollisionTraverser, CollisionNode, CollisionHandlerQueue, CollisionRay, BitMask32
 from .entity import Entity
 # Importáljuk a slotokat és típusokat
 from .components import (
     WeaponMount, TacticalSlot, ArmorSlot, HullAugment, RelicSlot,
-    DamageType, RelicType
+    DamageType, RelicType, MiningLaser
 )
 import math
 
@@ -54,6 +54,9 @@ class Ship(Entity):
         self.hull_augments = []   
         self.relic_slots = 3
         self.relics = []     
+        
+        # --- BÁNYÁSZAT ---
+        self.mining_lasers = [] # A MiningLaser komponensek itt lesznek
 
         # --- FIZIKA VÁLTOZÓK ---
         self.velocity = Vec3(0, 0, 0)
@@ -64,16 +67,34 @@ class Ship(Entity):
         self.autopilot_mode = None
         self.target_entity = None
 
+        # --- ÜTKÖZÉS KEZELÉS (Raycasting) ---
+        self.cTrav = CollisionTraverser()
+        self.cQueue = CollisionHandlerQueue()
+        self.ray = CollisionRay()
+        self.ray_node = CollisionNode('miningRay')
+        self.ray_node.addSolid(self.ray)
+        # Beállítjuk a maszkot, hogy csak az aszteroidákkal ütközzön (Bit 1)
+        self.ray_node.setFromCollideMask(BitMask32.bit(1))
+        self.ray_node.setIntoCollideMask(BitMask32.allOff())
+        self.ray_np = render.attachNewNode(self.ray_node)
+        self.cTrav.addCollider(self.ray_np, self.cQueue)
+
+
         # Modell betöltése
         self.load_model("models/SpaceShip", scale=1.0)
         
         if self.is_local:
             self.model.setColor(1, 1, 1, 1)
             self.setup_controls()
-            self.setup_camera()
+            self.setup_camera() # Ezt a hívást vizsgáljuk
             self.equip_test_items()
+            
+            # Gyorsgomb a bányász lézernek
+            self.accept("space", self.fire_mining_laser)
         else:
-            self.model.setColor(1, 0, 0, 1)
+            # Csak az aszteroidák kapnak ütközés detekciót, de NPC-knél is beállíthatjuk
+            self.model.setCollideMask(BitMask32.bit(1))
+
 
     @property
     def max_speed(self):
@@ -89,19 +110,20 @@ class Ship(Entity):
         self.armor_slots.append(ArmorSlot("Titánium Lemez", armor_hp=200, resistance_type=DamageType.IMPACT, resistance_val=0.2))
         self.hull_augments.append(HullAugment("Raktér Bővítő", hull_hp=50))
         self.relics.append(RelicSlot("Ősi Pajzs Generátor", relic_type=RelicType.PASSIVE, modifiers={'shield_max': 1.2}))
-        print(f"[SHIP] Stats - HP: {self.hp}, Shield: {self.shield}, Armor: {self.armor}")
+        
+        # Teszt bányász lézer
+        self.mining_lasers.append(MiningLaser())
+        
+        print(f"[SHIP] Felszerelve: {len(self.weapon_mounts)} fegyver, {len(self.mining_lasers)} bányász lézer.")
 
     def setup_controls(self):
-        # MÁR NEM HASZNÁLUNK WASD-T
-        # A mozgás kizárólag célpont kijelöléssel történik
-        
-        # --- UI GYORSGOMBOK ---
-        # I = Inventory, M = Market
+        # UI gyorsgombok (I, M)
         if hasattr(self.manager, 'window_manager'):
             self.accept("i", self.manager.window_manager.toggle_inventory)
             self.accept("m", self.manager.window_manager.toggle_market)
-    
-    def setup_camera(self):
+
+    def setup_camera(self): # <--- HIÁNYZÓ METÓDUS PÓTLÁSA
+        # --- KAMERA IRÁNYÍTÁS (TPS Free Look) ---
         self.cam_dist = 40.0
         self.cam_h = 0.0
         self.cam_p = -20.0
@@ -127,6 +149,60 @@ class Ship(Entity):
 
     def adjust_zoom(self, amount):
         self.cam_dist = max(10.0, min(100.0, self.cam_dist + amount))
+
+
+    def fire_mining_laser(self):
+        """Megpróbál bányász lézerrel lőni a célpont irányába (SPACE gomb)."""
+        if not self.mining_lasers:
+            print("[MINING] Nincs felszerelt bányász lézer.")
+            return
+
+        laser = self.mining_lasers[0] # Első lézer használata
+
+        # Létrehozzuk a Ray-t a hajó orrától előre
+        start_pos = self.model.getPos()
+        forward_vec = self.model.getQuat().getForward()
+
+        # Ray beállítása
+        self.ray.setOrigin(start_pos)
+        self.ray.setDirection(forward_vec)
+        
+        # Lekérdezés (Traversal)
+        self.cTrav.traverse(render)
+        
+        # Eredmények feldolgozása
+        if self.cQueue.getNumEntries() > 0:
+            self.cQueue.sortEntries()
+            entry = self.cQueue.getEntry(0) # Legközelebbi találat
+            
+            hit_node = entry.getIntoNodePath().getParent()
+            
+            # Megkeressük, hogy melyik Entity-hez tartozik ez a NodePath
+            hit_entity = None
+            # Mivel a remote_ships tartalmazza az aszteroidákat is a Hostnál:
+            for entity in self.manager.remote_ships.values():
+                if entity.model == hit_node:
+                    hit_entity = entity
+                    break
+
+            if hit_entity and hit_entity.entity_type == "Aszteroida":
+                hit_pos = entry.getSurfacePoint(render)
+                distance = (hit_pos - start_pos).length()
+
+                if distance <= laser.range:
+                    # Sikeres találat és távolságon belül
+                    
+                    # 1. Vizuális hatás (gödör/pitting)
+                    if hasattr(hit_entity, 'apply_mining_damage'):
+                        hit_entity.apply_mining_damage(hit_pos)
+                    
+                    # 2. Erőforrás gyűjtés (logikai hatás)
+                    resource_name = f"{laser.resource_type} Ásvány"
+                    self.manager.window_manager.add_item(resource_name, "Nyersanyag", laser.resource_yield, 20)
+                    print(f"[MINING] Bányászva {laser.resource_yield} {resource_name}.")
+                    return
+
+        print("[MINING] Nincs találat vagy a cél túl messze van/nem bányászható.")
 
     def update(self, dt):
         if not self.is_local:

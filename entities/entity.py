@@ -1,5 +1,7 @@
-from panda3d.core import Vec3
+from panda3d.core import Vec3, NodePath
 from direct.showbase.DirectObject import DirectObject
+# Importáljuk a procedurális doboz generálást
+from systems.generation import AsteroidGenerator
 
 # ==============================================================================
 # BASE ENTITY CLASS
@@ -13,13 +15,25 @@ class Entity(DirectObject):
         self.model = None
 
     def load_model(self, path, scale=1.0, color=None):
-        """Betölti a 3D modellt és beállítja az alap tulajdonságokat"""
+        """Betölti a 3D modellt fájlból vagy procedurálisan fallback-el."""
+        
+        # Először megpróbáljuk betölteni a fájlt
+        model_loaded = False
+        # A loader Panda3D globális változó
         try:
-            # A loader és render a Panda3D globális változói
             self.model = loader.loadModel(path)
-        except:
-            print(f"[ERROR] Nem sikerült betölteni: {path}, placeholder használata.")
-            self.model = loader.loadModel("models/box")
+            if self.model and self.model.getNumPaths() > 0:
+                 model_loaded = True
+        except Exception:
+            pass # A fájl betöltése nem sikerült
+        
+        if not model_loaded:
+            print(f"[ERROR] Nem sikerült betölteni a {path} fájlt, procedurális doboz fallback.")
+            
+            # Procedurális fallback: Használjuk a generator.py-ban lévő logikát
+            generator = AsteroidGenerator() 
+            # A fallback most a procedurális dobozt fogja használni
+            self.model = generator.generate(name=self.name, min_scale=scale, max_scale=scale * 1.05)
             
         self.model.setScale(scale)
         self.model.reparentTo(render)

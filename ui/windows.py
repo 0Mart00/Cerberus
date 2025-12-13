@@ -103,6 +103,13 @@ class WindowManager:
             manageScrollBars=True,
             autoHideScrollBars=True
         )
+        
+        # GÖRGETŐSÁV ELREJTÉSE (Átlátszóvá tétel)
+        self.inv_scroll_frame.verticalScroll['frameColor'] = (0, 0, 0, 0)
+        self.inv_scroll_frame.verticalScroll.incButton['frameColor'] = (0, 0, 0, 0)
+        self.inv_scroll_frame.verticalScroll.decButton['frameColor'] = (0, 0, 0, 0)
+        self.inv_scroll_frame.verticalScroll.thumb['frameColor'] = (0, 0, 0, 0)
+
 
     def refresh_inventory_ui(self):
         # Töröljük a régi elemeket a canvasról
@@ -202,6 +209,12 @@ class WindowManager:
             manageScrollBars=True,
             autoHideScrollBars=True
         )
+
+        # GÖRGETŐSÁV ELREJTÉSE (Átlátszóvá tétel)
+        self.market_scroll_frame.verticalScroll['frameColor'] = (0, 0, 0, 0)
+        self.market_scroll_frame.verticalScroll.incButton['frameColor'] = (0, 0, 0, 0)
+        self.market_scroll_frame.verticalScroll.decButton['frameColor'] = (0, 0, 0, 0)
+        self.market_scroll_frame.verticalScroll.thumb['frameColor'] = (0, 0, 0, 0)
         
         # Dummy Market Data (Eladó cuccok)
         self.market_data = [

@@ -65,3 +65,11 @@ class RelicSlot(ShipComponent):
         self.relic_type = relic_type
         # Statisztika módosítók szótára, pl. {'shield_recharge': 1.2}
         self.modifiers = modifiers if modifiers else {}
+
+class MiningLaser(ShipComponent):
+    """Bányászati lézer: Hatótáv és hozam"""
+    def __init__(self, name="Bányász Lézer", range=200.0, resource_yield=10, type="Veldspar"):
+        super().__init__(name)
+        self.range = range
+        self.resource_yield = resource_yield
+        self.resource_type = type
