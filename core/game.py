@@ -34,6 +34,8 @@ class CerberusGame(ShowBase):
         self.local_ship = None
         self.remote_ships = {} 
         self.my_id = 0 
+        
+        # NOTE: A zoomolás és görgetés kezelő task a HUD-ban van beállítva.
 
     def start_host(self):
         """Hosztolás indítása: Szerver + Helyi Kliens. Visszatérési érték: bool (sikerült-e)."""
@@ -104,6 +106,7 @@ class CerberusGame(ShowBase):
         self.local_ship.set_pos(0, 0, 0) # 0,0,0 az űr közepe
         
         # Kamera a hajóra (a Ship osztályban van a kamera pivot)
+        # HAGYJUK MEG EZT, DE A HUD MOST MÁR KEZELI A ZOOOMOT.
         self.camera.reparentTo(self.local_ship.model)
         self.camera.setPos(0, -30, 10)
         self.camera.lookAt(self.local_ship.model)
@@ -139,9 +142,11 @@ class CerberusGame(ShowBase):
                 entity.update(dt)
 
             # FRISSÍTÉS: Frissítjük a játékos pozícióját az Overview Managerben
-            player_pos = self.local_ship.get_pos()
-            if hasattr(self.hud, 'overview_manager') and self.hud.overview_manager:
-                self.hud.overview_manager.player_pos = player_pos
+            # A minta Overview nem használja az OverviewManager-t, de ha a jövőben
+            # a valódi adatokat akarjuk beilleszteni, ez a kódblokk kell.
+            # player_pos = self.local_ship.get_pos()
+            # if hasattr(self.hud, 'overview_manager') and self.hud.overview_manager:
+            #     self.hud.overview_manager.player_pos = player_pos
 
             
             # Pozíció küldése hálózaton (csak a hajó pozíciója érdekes)
@@ -166,4 +171,3 @@ class CerberusGame(ShowBase):
             self.remote_ships[sender_id] = new_ship
         
         self.remote_ships[sender_id].set_pos(x, y, z)
-
