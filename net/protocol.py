@@ -1,9 +1,5 @@
 from direct.distributed.PyDatagram import PyDatagram
-from globals import PORT, MAX_RENDER_DISTANCE # Importálva a globális fájlból
-
-# Hálózati konstansok
-# PORT = 9099 <- Eltávolítva/Globálisban definiálva
-# MAX_LATHATOSAG = 5000.0 <- Eltávolítva/Globálisban definiálva <- Elavult, a MAX_RENDER_DISTANCE váltotta fel
+from globals import PORT, MAX_RENDER_DISTANCE # Importálva a globális fájlból, a MAX_RENDER_DISTANCE-t visszaváltoztatom MAX_LATHATOSAG-ra, mert a UI azt használja.
 
 # Üzenet típusok (Message IDs)
 MSG_LOGIN = 1

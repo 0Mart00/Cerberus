@@ -4,7 +4,7 @@ from panda3d.core import loadPrcFile
 import random
 
 from ui.menus import MainMenu
-from ui.hud import HUD # <-- FRISSÍTVE: A generikus HUD osztály importálása
+from ui.hud import HUD # Helyes importálás: Nagybetűs 'HUD' osztályt importálunk
 from ui.windows import WindowManager
 
 from net.server import GameServer
@@ -26,22 +26,25 @@ class CerberusGame(ShowBase):
         
         self.window_manager = WindowManager(self)
         
+        # Hozzáadjuk a Base referenciát a Window Managerhez
         self.menu = MainMenu(self)
-        self.hud = HUD(self) # <-- FRISSÍTVE: HUD példányosítása
+        self.hud = HUD(self) 
         
         # Játékállapot
         self.local_ship = None
-        self.remote_ships = {} # {id: Entity} - Most már minden entitás itt van
+        self.remote_ships = {} 
         self.my_id = 0 
 
     def start_host(self):
-        """Hosztolás indítása: Szerver + Helyi Kliens"""
+        """Hosztolás indítása: Szerver + Helyi Kliens. Visszatérési érték: bool (sikerült-e)."""
         self.server = GameServer(self)
         if self.server.start():
             self.my_id = 1
             # Entitások generálása a Hostnak (itt hívjuk meg az új logikát)
             self.spawn_test_entities()
             self.start_gameplay()
+            return True # Siker
+        return False # Hiba
 
     def spawn_test_entities(self):
         """Véletlenszerű objektumok elhelyezése a teszteléshez"""
@@ -71,8 +74,6 @@ class CerberusGame(ShowBase):
             e_name = f"{e_type_name}-{i+1}"
             
             # Entitás inicializálása a megfelelő osztállyal.
-            # Minden Entity osztály (Ship, Asteroid, Planet, stb.) felelős 
-            # a saját Panda3D NodePath (objektum) létrehozásáért (load/generate).
             if EntityClass == Ship:
                 entity = EntityClass(self, entity_id, is_local=False, name=e_name, ship_type="Drón")
             else:
@@ -138,13 +139,10 @@ class CerberusGame(ShowBase):
                 entity.update(dt)
 
             # FRISSÍTÉS: Frissítjük a játékos pozícióját az Overview Managerben
-            # Az Overview Manager (ami a self.hud.overview_manager-ben van) innen kapja meg az aktuális pozíciót
             player_pos = self.local_ship.get_pos()
             if hasattr(self.hud, 'overview_manager') and self.hud.overview_manager:
                 self.hud.overview_manager.player_pos = player_pos
 
-            # A self.hud.update_list hívás eltávolítva. 
-            # Az Overview Panel (a HUD belsejében) saját Task-ban, időzítve frissít.
             
             # Pozíció küldése hálózaton (csak a hajó pozíciója érdekes)
             pos = self.local_ship.get_pos()
@@ -168,3 +166,4 @@ class CerberusGame(ShowBase):
             self.remote_ships[sender_id] = new_ship
         
         self.remote_ships[sender_id].set_pos(x, y, z)
+

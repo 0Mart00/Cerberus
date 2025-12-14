@@ -1,224 +1,449 @@
+from panda3d.core import LVector4 as LColor
+from panda3d.core import TextNode, Point3
+from direct.task import Task
+
+# DirectGUI importok
 from direct.gui.DirectGui import *
-from panda3d.core import TextNode, Vec3, Vec4, NodePath
+from direct.gui.DirectGuiGlobals import *
+
+# Feltételezzük, hogy ezek a modulok elérhetőek (a te struktúrád alapján)
+from .overview_row import OverviewRow, ROW_HEIGHT, COLUMN_WIDTHS, OVERVIEW_BG, OVERVIEW_LINE, OVERVIEW_TEXT_COLOR
+
+# Update cycle
+UPDATE_INTERVAL = 0.35
+
+# Állítható UI méretek
+PANEL_WIDTH_ABS = 0.75
+PANEL_HEIGHT_ABS = 1.7
+BUTTON_SCALE = 0.02
+# FIX: A CHECKBOX_SCALE csökkentése, hogy vizuálisan kisebbek legyenek
+CHECKBOX_SCALE = 0.012 # Eredeti: 0.015
 
 class OverviewPanel:
-    def __init__(self, game, overview_manager=None): # Hozzáadva az overview_manager argumentum
-        self.game = game
-        self.overview_manager = overview_manager # Eltároljuk, ha szükséges
-        self.items = {} # Entitás ID -> OverviewRow
+    def __init__(self, base, overview_manager):
+        self.base = base
+        self.manager = overview_manager
         
-        # --- STÍLUS DEFINÍCIÓK ---
-        self.theme = {
-            'bg_color': (0.05, 0.05, 0.08, 0.9),      # Sötét háttér
-            'border_color': (0.3, 0.5, 0.6, 0.5),    # Halvány keret szín
+        self.all_items_data = []
+        self.visible_items_data = []
+
+        self.sort_key = 'distance' 
+        self.sort_order = 'ASC' 
+        
+        # Initial filter settings
+        self.type_filters = {
+            "Ship": True, "Drone": True, "Structure": True, 
+            "Wreck": True, "Asteroid": True, "Missile": True
         }
+        self.state_filters = {
+            "Targeted": False, "Attacking": False, "WithinRange": False
+        }
+        self.selected_item_id = None
+        self.context_menu = None
         
-        # --- Fő panel konténer ---
+        # UI setup
+        self.setup_ui()
+        
+        # Initial data load
+        self.all_items_data = self.manager.get_all_items_data()
+        self.rebuild_list()
+        
+        # Start update task
+        self.base.taskMgr.doMethodLater(UPDATE_INTERVAL, self.update_overview_task, "OverviewUpdateTask")
+        
+    def setup_ui(self):
+        """UI felépítése: Keret, szűrők, lista."""
+        
+        # --- 1. Main Panel Frame ---
         self.main_frame = DirectFrame(
-            frameColor=self.theme['bg_color'],
-            frameSize=(-0.7, 0.7, -0.65, 0.8),
-            pos=(-0.8, 0, 0), # Bal középen (aspect2d)
-            relief=DGG.FLAT,
-            borderWidth=(0.002, 0.002),
-            state=DGG.NORMAL,
+            frameColor=OVERVIEW_BG,
+            frameSize=(0, PANEL_WIDTH_ABS, -PANEL_HEIGHT_ABS, 0), 
+            pos=(0.02, 0, -0.02),
+            parent=self.base.a2dTopLeft, 
+            relief=DGG.FLAT
+        )
+
+        # --- Top Header & Filter Tab ---
+        header_height = 0.05
+        filter_area_height = 0.25
+        
+        # Title
+        DirectLabel(
+            parent=self.main_frame,
             text="Overview",
-            text_pos=(0, 0.75),
-            text_scale=0.07,
-            text_fg=(0.0, 0.8, 1.0, 1),
+            text_fg=OVERVIEW_TEXT_COLOR,
+            text_scale=0.035,
+            frameColor=OVERVIEW_LINE * 0.5,
+            frameSize=(0, PANEL_WIDTH_ABS, -header_height, 0),
+            pos=(0, 0, 0),
+            text_align=TextNode.ACenter,
+            text_pos=(PANEL_WIDTH_ABS / 2, -0.035) # Középre igazítás
         )
 
-        # Fül konténer (ahol az aktív fül neve látszik)
-        self.tab_container = DirectFrame(
+        # Filter Frame
+        self.filter_frame = DirectFrame(
             parent=self.main_frame,
-            frameColor=(0.1, 0.1, 0.15, 1),
-            frameSize=(-0.7, 0.7, 0.65, 0.75),
-            pos=(0, 0, 0),
+            frameColor=OVERVIEW_BG * 0.8,
+            frameSize=(0, PANEL_WIDTH_ABS, -filter_area_height, 0),
+            pos=(0, 0, -header_height),
             relief=DGG.FLAT
         )
-
-        self.lbl_active_tab = DirectLabel(
-            parent=self.tab_container,
-            text="Default Tab (All Entities)",
-            text_scale=0.05,
-            pos=(0, 0, -0.05),
-            text_fg=(0.8, 0.9, 1.0, 1),
-            frameColor=(0,0,0,0)
+        
+        # --- Type Filters (Checkboxes) ---
+        x_offset = 0.01
+        y_start = -0.01
+        
+        DirectLabel(
+            parent=self.filter_frame, 
+            text="TÍPUS SZŰRŐ:", 
+            text_scale=0.02, 
+            text_fg=OVERVIEW_TEXT_COLOR, 
+            frameColor=(0,0,0,0), 
+            pos=(x_offset, 0, y_start), 
+            text_align=TextNode.ALeft
         )
         
-        # --- GÖRGETHETŐ TÁBLÁZAT (Scroll Frame) ---
-        self.scroll_frame = DirectScrolledFrame(
+        type_keys = list(self.type_filters.keys())
+        for i, f_type in enumerate(type_keys):
+            # Checkbox létrehozása
+            checkbox = DirectCheckButton(
+                parent=self.filter_frame,
+                text=f_type,
+                text_fg=OVERVIEW_TEXT_COLOR,
+                text_scale=CHECKBOX_SCALE,
+                # FIX: boxScale explicit beállítása a jelző méretének csökkentéséhez
+                scale=CHECKBOX_SCALE * 0.8, 
+                boxRelief=DGG.FLAT,
+                indicatorValue=self.type_filters[f_type], # Helyes inicializálás
+                command=self.toggle_type_filter,
+                extraArgs=[f_type],
+                pos=(x_offset + 0.05 + (i % 3) * 0.23, 0, y_start - 0.04 - (i // 3) * 0.04),
+                text_align=TextNode.ALeft
+            )
+
+
+        # --- State Filters ---
+        state_y_start = y_start - 0.04 - (len(type_keys)//3 + 1) * 0.04 - 0.01
+        
+        DirectLabel(
+            parent=self.filter_frame, 
+            text="ÁLLAPOT SZŰRŐ:", 
+            text_scale=0.02, 
+            text_fg=OVERVIEW_TEXT_COLOR, 
+            frameColor=(0,0,0,0), 
+            pos=(x_offset, 0, state_y_start), 
+            text_align=TextNode.ALeft
+        )
+        
+        for i, f_state in enumerate(self.state_filters.keys()):
+            checkbox = DirectCheckButton(
+                parent=self.filter_frame,
+                text=f_state,
+                text_fg=OVERVIEW_TEXT_COLOR,
+                text_scale=CHECKBOX_SCALE,
+                # FIX: boxScale explicit beállítása a jelző méretének csökkentéséhez
+                scale=CHECKBOX_SCALE * 0.8, 
+                boxRelief=DGG.FLAT,
+                indicatorValue=self.state_filters[f_state], # Helyes inicializálás
+                command=self.toggle_state_filter,
+                extraArgs=[f_state],
+                pos=(x_offset + 0.05 + i * 0.25, 0, state_y_start - 0.04),
+                text_align=TextNode.ALeft
+            )
+
+        # --- Column Headers ---
+        header_y_list = -header_height - filter_area_height 
+        self.column_headers = []
+        col_titles = ['Ikon', 'Név', 'Távolság', 'Sebesség', 'Szögseb.', 'Veszély'] 
+        col_keys = ['icon', 'name', 'distance', 'velocity', 'angular', 'threat'] 
+        x_offset = 0
+        
+        # Separator line top
+        DirectFrame(parent=self.main_frame, frameColor=OVERVIEW_LINE, frameSize=(0, PANEL_WIDTH_ABS, 0, 0.001), pos=(0, 0, header_y_list + ROW_HEIGHT/2))
+        
+        total_relative_width = sum(COLUMN_WIDTHS)
+        
+        for i, (relative_width, title, key) in enumerate(zip(COLUMN_WIDTHS, col_titles, col_keys)):
+            width = PANEL_WIDTH_ABS * (relative_width / total_relative_width)
+            
+            # Igazítás beállítása
+            align = TextNode.ALeft
+            text_x = 0.005
+            if title in ('Ikon', 'Veszély'):
+                align = TextNode.ACenter
+                text_x = width / 2
+            
+            btn = DirectButton(
+                parent=self.main_frame,
+                text=title,
+                text_fg=OVERVIEW_TEXT_COLOR,
+                text_scale=BUTTON_SCALE,
+                text_align=align,
+                text_pos=(text_x, -ROW_HEIGHT/4),
+                frameColor=OVERVIEW_BG * 1.5,
+                relief=DGG.FLAT,
+                frameSize=(0, width, -ROW_HEIGHT/2, ROW_HEIGHT/2),
+                pos=(x_offset, 0, header_y_list),
+                command=self.sort_by_column,
+                extraArgs=[key]
+            )
+            self.column_headers.append(btn)
+            x_offset += width
+
+        # Separator line bottom
+        DirectFrame(parent=self.main_frame, frameColor=OVERVIEW_LINE, frameSize=(0, PANEL_WIDTH_ABS, -0.001, 0), pos=(0, 0, header_y_list - ROW_HEIGHT/2))
+
+        # --- Scrollable List Area ---
+        list_top_z = header_y_list - ROW_HEIGHT/2
+        list_bottom_z = -PANEL_HEIGHT_ABS + 0.02
+        list_height = list_top_z - list_bottom_z
+        
+        # FIX: Létrehozzuk a dedikált keretet a görgethető listának (tisztább elrendezés)
+        self.list_area_frame = DirectFrame(
             parent=self.main_frame,
-            canvasSize=(-0.68, 0.68, -2, 0), # Nagyobb canvas a tartalomhoz
-            frameSize=(-0.68, 0.68, -0.6, 0.63), # Látható keret mérete (fejléc alatt)
-            pos=(0, 0, 0),
-            frameColor=(0.1, 0.1, 0.15, 0.5),
+            frameColor=(0, 0, 0, 0), # Átlátszó keret
+            frameSize=(0, PANEL_WIDTH_ABS, -list_height, 0), # Méret megegyezik a görgethető területtel
+            pos=(0, 0, list_top_z), # Pozíció a fejléc alatt
+            relief=DGG.FLAT
+        )
+        
+        self.scroll_list = DirectScrolledList(
+            parent=self.list_area_frame, # FIX: Új szülő a lista keret
+            numItemsVisible=int(list_height / ROW_HEIGHT),
+            # A frame mérete az új szülő (list_area_frame) méretéhez igazodik
+            frameSize=(0, PANEL_WIDTH_ABS, -list_height, 0),
+            frameColor=OVERVIEW_BG * 0.9,
+            pos=(0, 0, 0), # A szülő keret tetejére pozícionálva (0, 0)
             relief=DGG.FLAT,
-            borderWidth=(0, 0),
-            verticalScroll_frameSize=(0, 0.03, -0.6, 0.63),
-            horizontalScroll_frameSize=(-0.68, 0.68, 0, 0.03),
-            manageScrollBars=True,
-            autoHideScrollBars=True,
-            state=DGG.NORMAL 
-        )
-        self.canvas = self.scroll_frame.getCanvas() # Rövidebb hivatkozás
-        
-        # Scrollbar STYLING (Sci-Fi Look) - Látható sávok
-        scroll_color = (0.2, 0.25, 0.3, 1)  # Sötét sáv szín
-        thumb_color = (0.0, 0.6, 0.8, 1)    # Neon szín a húzókához
-
-        # Függőleges sáv
-        self.scroll_frame.verticalScroll['frameColor'] = scroll_color 
-        self.scroll_frame.verticalScroll.incButton['frameColor'] = (0.1, 0.1, 0.1, 1)
-        self.scroll_frame.verticalScroll.decButton['frameColor'] = (0.1, 0.1, 0.1, 1)
-        self.scroll_frame.verticalScroll.thumb['frameColor'] = thumb_color
-        
-        # Vízszintes sáv
-        self.scroll_frame.horizontalScroll['frameColor'] = scroll_color
-        self.scroll_frame.horizontalScroll.incButton['frameColor'] = (0.1, 0.1, 0.1, 1)
-        self.scroll_frame.horizontalScroll.decButton['frameColor'] = (0.1, 0.1, 0.1, 1)
-        self.scroll_frame.horizontalScroll.thumb['frameColor'] = thumb_color
-
-        # Mouse Wheel Görgetés Engedélyezése
-        self.scroll_frame.bind(DGG.ENTER, self._scroll_frame_enter)
-        self.scroll_frame.bind(DGG.EXIT, self._scroll_frame_exit)
-        self.is_mouse_over_scroll_frame = False
-
-        # --- TÁBLÁZAT FEJLÉC ---
-        self.create_header()
-
-        # --- TESZT GOMB ELTÁVOLÍTVA ---
-        # A hatalmas, barna gomb (create_default_group_button) eltávolítva a felhasználói kérésnek megfelelően.
-        
-        self.hide() # Alapból elrejtjük
-
-    def create_header(self):
-        """Létrehozza a táblázat fejlécét az OverviewPanel tetején."""
-        
-        header = DirectFrame(
-            parent=self.main_frame,
-            frameColor=(0.15, 0.15, 0.2, 1),
-            frameSize=(-0.68, 0.68, 0.55, 0.65),
-            pos=(0, 0, 0),
-            relief=DGG.FLAT
+            # FIX: forceHeight visszaállítása kritikus az "elcsúszás" megakadályozására.
+            forceHeight=ROW_HEIGHT, 
+            # Scrollbar stílus javítás
+            incButton_frameSize=(0, 0, 0, 0), 
+            decButton_frameSize=(0, 0, 0, 0)
         )
         
-        header_scale = 0.035
-        header_fg = (0.6, 0.8, 1.0, 1) # Világoskék
-        
-        # Oszlopfejlécek
-        DirectLabel(parent=header, text="Icon", scale=header_scale, pos=(-0.6, 0, 0.05), frameColor=(0,0,0,0), text_fg=header_fg)
-        DirectLabel(parent=header, text="Name", scale=header_scale, pos=(-0.35, 0, 0.05), frameColor=(0,0,0,0), text_fg=header_fg)
-        DirectLabel(parent=header, text="Type", scale=header_scale, pos=(0.0, 0, 0.05), frameColor=(0,0,0,0), text_fg=header_fg)
-        DirectLabel(parent=header, text="Distance", scale=header_scale, pos=(0.3, 0, 0.05), frameColor=(0,0,0,0), text_fg=header_fg)
-        DirectLabel(parent=header, text="HP %", scale=header_scale, pos=(0.6, 0, 0.05), frameColor=(0,0,0,0), text_fg=header_fg)
+    def row_command(self, action, item_id, event=None):
+        """Sor kattintás/jobbklikk kezelő."""
+        item_data = next((item for item in self.all_items_data if item['id'] == item_id), None)
+        if not item_data: return
 
-        # Húzható sáv (Drag bar)
-        drag_bar = DirectFrame(
-            parent=header,
-            frameColor=(0.1, 0.1, 0.1, 0.0), # Láthatatlan a húzáshoz
-            frameSize=(-0.68, 0.68, 0, 0.1),
-            pos=(0, 0, 0),
-            state=DGG.NORMAL
+        if action == 'select':
+            self.set_selected(item_id)
+        elif action == 'context_menu':
+            self.set_selected(item_id) # Jobbklikk is jelölje ki
+            self.show_context_menu(item_data)
+        
+    def make_row_item(self, item_data, command_callback):
+        """Létrehoz egy OverviewRow UI elemet."""
+        # FIX: parent=None beállítása, hagyva, hogy az addItem() kezelje a szülőhöz rendelést.
+        row = OverviewRow(
+            parent=None,
+            item_data=item_data,
+            command_callback=command_callback
         )
-        # BINDELÉS: Ezt a részt mozgathatjuk
-        drag_bar.bind(DGG.B1PRESS, self.start_drag)
-        drag_bar.bind(DGG.B1RELEASE, self.end_drag)
+        return row
 
-    # --- Görgetés fókusz kezelése ---
-    def _scroll_frame_enter(self, event):
-        self.is_mouse_over_scroll_frame = True
-        if self.game.local_ship:
-            self.game.local_ship.ignore("wheel_up")
-            self.game.local_ship.ignore("wheel_down")
+    def update_overview_task(self, task):
+        """Az időzített frissítési feladat (0.35s)."""
+        # 1. Adatok frissítése
+        self.all_items_data = self.manager.get_all_items_data()
         
-        self.game.accept("wheel_up", self.scroll_up)
-        self.game.accept("wheel_down", self.scroll_down)
-
-    def _scroll_frame_exit(self, event):
-        self.is_mouse_over_scroll_frame = False
+        # 2. Szűrés és rendezés
+        new_visible_data = self._filter_and_sort(self.all_items_data)
         
-        self.game.ignore("wheel_up")
-        self.game.ignore("wheel_down")
-
-        if self.game.local_ship:
-            self.game.local_ship.accept("wheel_up", self.game.local_ship.adjust_zoom, [-5.0])
-            self.game.local_ship.accept("wheel_down", self.game.local_ship.adjust_zoom, [5.0])
-
-    def scroll_up(self):
-        if 'verticalScroll' in self.scroll_frame:
-            current_value = self.scroll_frame['verticalScroll']['value']
-            new_value = max(0.0, current_value - 0.10)
-            self.scroll_frame['verticalScroll']['value'] = new_value
-
-    def scroll_down(self):
-        if 'verticalScroll' in self.scroll_frame:
-            current_value = self.scroll_frame['verticalScroll']['value']
-            new_value = min(1.0, current_value + 0.10)
-            self.scroll_frame['verticalScroll']['value'] = new_value
-
-    # --- Húzás logika (Drag Logic) ---
-    def start_drag(self, event):
-        self.dragging_ui = True
-        m = base.mouseWatcherNode.getMouse()
-        current_pos = self.main_frame.getPos(aspect2d)
+        current_data_ids = [item['id'] for item in self.visible_items_data]
+        new_data_ids = [item['id'] for item in new_visible_data]
         
-        # Különbség a kurzor és az ablak középpontja között
-        self.drag_start_pos = (m.getX() - current_pos.getX(), m.getY() - current_pos.getZ())
-
-    def end_drag(self, event):
-        self.dragging_ui = False
-
-    def drag_update_task(self, task):
-        if self.dragging_ui and base.mouseWatcherNode.hasMouse():
-            m = base.mouseWatcherNode.getMouse()
+        # 3. Optimalizáció: Csak akkor építjük újra, ha a lista hossza vagy sorrendje változott
+        if current_data_ids != new_data_ids:
+            self.rebuild_list(new_visible_data)
+        else:
+            # Egyébként csak a tartalmat frissítjük (pl. távolság változása)
+            self.visible_items_data = new_visible_data
+            self.update_row_contents(new_visible_data)
             
-            new_x = m.getX() - self.drag_start_pos[0]
-            new_z = m.getY() - self.drag_start_pos[1]
+        return task.again
+
+    def update_row_contents(self, new_data):
+        """Csak a meglévő sorok szöveges tartalmát frissíti (teljesítmény javítás)."""
+        data_map = {item['id']: item for item in new_data}
+        
+        for row in self.scroll_list['items']:
+            item_id = row.item_data['id']
+            if item_id in data_map:
+                row.update_content(data_map[item_id])
+
+    def sort_by_column(self, column_key):
+        """Oszlop szerinti rendezés beállítása."""
+        if self.sort_key == column_key:
+            self.sort_order = 'DESC' if self.sort_order == 'ASC' else 'ASC'
+        else:
+            self.sort_key = column_key
+            self.sort_order = 'ASC'
+
+        self.rebuild_list()
+
+    def _filter_and_sort(self, data):
+        """Szűrők és rendezés alkalmazása."""
+        
+        # --- Filtering ---
+        filtered = []
+        for item in data:
+            # Type Filter
+            if not self.type_filters.get(item['type'], True):
+                continue
+
+            # State Filter
+            state_active = any(self.state_filters.values())
+            if not state_active:
+                filtered.append(item)
+            else:
+                # OR logika: ha bármelyik aktív filter illeszkedik az item flagjére
+                match = False
+                for state, is_active in self.state_filters.items():
+                    if is_active and state in item['flags']:
+                        match = True
+                        break
+                if match:
+                    filtered.append(item)
+                
+        # --- Sorting ---
+        reverse = (self.sort_order == 'DESC')
+        key = self.sort_key
+        
+        # Biztonságos rendezés (ha hiányzik a kulcs, ne crasheljen)
+        def sort_helper(x):
+            val = x.get(key)
+            if val is None:
+                return 0 if key in ('distance', 'velocity', 'angular', 'threat') else ""
+            return val
+
+        sorted_data = sorted(filtered, key=sort_helper, reverse=reverse)
+        return sorted_data
+
+    def rebuild_list(self, new_data=None):
+        """Teljes lista újraépítése."""
+        if new_data is None:
+            new_data = self._filter_and_sort(self.all_items_data)
             
-            # Határok ellenőrzése
-            frame_size = self.main_frame['frameSize']
-            frame_w = frame_size[1] - frame_size[0]
-            frame_h = frame_size[3] - frame_size[2]
+        self.visible_items_data = new_data
+        
+        # Eltávolítjuk a régi elemeket
+        self.scroll_list.removeAndDestroyAllItems()
+        
+        # Új elemek hozzáadása
+        for item_data in self.visible_items_data:
+            row = self.make_row_item(item_data, self.row_command)
+            if self.selected_item_id == item_data['id']:
+                row.set_selected(True)
+            self.scroll_list.addItem(row)
             
-            new_x = max(new_x, -1.0 + frame_w / 2.0)
-            new_x = min(new_x, 1.0 - frame_w / 2.0)
-            new_z = max(new_z, -1.0 + frame_h / 2.0)
-            new_z = min(new_z, 1.0 - frame_h / 2.0)
+        self.scroll_list.refresh()
 
-            self.main_frame.setPos(new_x, 0, new_z)
-        return task.cont
+    def set_selected(self, item_id):
+        """Kiválasztott elem beállítása."""
+        # Régi kijelölés törlése
+        if self.selected_item_id is not None:
+            for row in self.scroll_list['items']:
+                if row.item_data['id'] == self.selected_item_id:
+                    row.set_selected(False)
+                    break
+        
+        # JAVÍTVA: Az indentálási hiba korrigálva. A változó beállítása a loopon kívül történik.
+        self.selected_item_id = item_id
 
-    # --------------------------------------------------------------------------
-    # FRISSÍTÉS ÉS MUTATÁS/REJTÉS
-    # --------------------------------------------------------------------------
-    def update_list(self, local_ship, remote_ships, overview_rows):
-        """Frissíti a táblázat tartalmát a kapott OverviewRow objektumokkal."""
-        if self.main_frame.isHidden():
-            return
+        # Új kijelölés megjelenítése
+        if self.selected_item_id is not None:
+            for row in self.scroll_list['items']:
+                if row.item_data['id'] == self.selected_item_id:
+                    row.set_selected(True)
+                    break
+
+    def toggle_type_filter(self, state, f_type): # DirectCheckButton sorrend: status, extraArgs
+        """Típus szűrő kapcsolása."""
+        self.type_filters[f_type] = bool(state)
+        self.rebuild_list()
+        
+    def toggle_state_filter(self, state, f_state):
+        """Állapot szűrő kapcsolása."""
+        self.state_filters[f_state] = bool(state)
+        self.rebuild_list()
+        
+    def show_context_menu(self, item_data):
+        """Jobbklikk menü megjelenítése."""
+        if self.context_menu:
+            self.context_menu.destroy()
+        
+        options = [
+            ("Célzárolás", lambda: print(f"-> Lock Target: {item_data['name']}")),
+            ("Megközelítés", lambda: print(f"-> Approach: {item_data['name']}")),
+            ("Keringés", lambda: print(f"-> Orbit: {item_data['name']}")),
+            ("Távolmaradás (10km)", lambda: print(f"-> Keep Range: {item_data['name']}")),
+            ("Ugrás ide", lambda: print(f"-> Warp To: {item_data['name']}")),
+        ]
+        
+        menu_width = 0.35
+        menu_item_height = 0.05
+        menu_height = len(options) * menu_item_height
+        
+        # Mouse pozíció pontos lekérése a render2d térben, majd konvertálás az a2dTopLeft-hez
+        if self.base.mouseWatcherNode.hasMouse():
+            mpos = self.base.mouseWatcherNode.getMouse() # (-1, 1) tartomány
             
-        # Töröljük a régi elemeket a canvasról
-        for child in self.canvas.getChildren():
-            child.removeNode()
-        self.items = {}
+            # A képernyő koordinátát (render2d) át kell számolni az a2dTopLeft (bal felső sarok relatív) rendszerbe.
+            # Létrehozunk egy pontot a render2d síkon (Z=0, mivel 2D)
+            p3_render2d = Point3(mpos.getX(), 0, mpos.getY())
+            
+            # Átkonvertáljuk az a2dTopLeft node koordináta rendszerébe
+            rel_pos = self.base.a2dTopLeft.getRelativePoint(self.base.render2d, p3_render2d)
+            
+            # Offset, hogy a kurzor hegyénél nyíljon, ne közepén
+            final_pos = (rel_pos.getX() + 0.01, 0, rel_pos.getZ() - 0.01)
+        else:
+            final_pos = (0.5, 0, -0.5) # Fallback
 
-        y_pos = 0.0 # Kezdő pozíció a canvas tetején
-        row_height = 0.07
+        self.context_menu = DirectFrame(
+            parent=self.base.a2dTopLeft,
+            frameColor=OVERVIEW_BG * 1.5,
+            frameSize=(0, menu_width, -menu_height, 0),
+            pos=final_pos,
+            relief=DGG.RAISED,
+            borderWidth=(0.005, 0.005),
+            sortOrder=1000 # Mindig felül legyen
+        )
 
-        # Tényleges tartalom hozzáadása
-        for row_data in overview_rows:
-            # Feltételezzük, hogy az OverviewRow osztály rendelkezik create_ui() metódussal
-            row_ui = row_data.create_ui(self.canvas, y_pos)
-            self.items[row_data.entity_id] = row_ui
-            y_pos -= row_height
-
-        # Canvas méretének beállítása
-        canvas_height = max(0.65, abs(y_pos)) # Minimum magasság, hogy ne legyen túl kicsi a canvas
-        self.scroll_frame['canvasSize'] = (-0.68, 0.68, -canvas_height, 0)
-        self.scroll_frame.setCanvasSize()
-
-
-    def show(self):
-        self.main_frame.show()
-
-    def hide(self):
-        self.main_frame.hide()
+        for i, (text, cmd) in enumerate(options):
+            DirectButton(
+                parent=self.context_menu,
+                text=text,
+                text_fg=OVERVIEW_TEXT_COLOR,
+                text_scale=0.03,
+                text_align=TextNode.ALeft,
+                text_pos=(0.02, -0.015),
+                frameColor=(0,0,0,0), # Átlátszó háttér, csak hover effekt kellene (alap DirectGui-ban nincs hover color prop, de így is jó)
+                relief=DGG.FLAT,
+                frameSize=(0, menu_width, -menu_item_height, 0),
+                pos=(0, 0, -i * menu_item_height),
+                command=lambda c=cmd: [c(), self.destroy_context_menu()]
+            )
+            
+        # Globális kattintás figyelő a menü bezárásához
+        self.base.acceptOnce('mouse1', self.destroy_context_menu)
+        self.base.acceptOnce('mouse3', self.destroy_context_menu) # Jobb klikk máshova is bezárja
+        
+    def destroy_context_menu(self, event=None):
+        """Context menü megsemmisítése."""
+        # Ha a gombra kattintunk, az eseményt el kell dobni, nehogy azonnal újra megnyíljon (ha az 'event' paramétert használjuk)
+        if self.context_menu:
+            self.context_menu.destroy()
+            self.context_menu = None
+            
+    def destroy(self):
+        """Takarítás."""
+        self.base.taskMgr.remove("OverviewUpdateTask")
+        self.base.ignore('mouse1')
+        self.base.ignore('mouse3')
+        if self.context_menu:
+            self.context_menu.destroy()
+        if self.main_frame:
+            self.main_frame.destroy()

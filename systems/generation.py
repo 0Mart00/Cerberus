@@ -1,9 +1,13 @@
 from panda3d.core import (
-    NodePath, GeomVertexFormat, GeomVertexData, GeomVertexWriter, GeomTriangles, Geom, 
-    GeomNode, Vec4, Vec3, LVector3, ModelPool
+    Vec3, NodePath, GeomVertexFormat, GeomVertexData, GeomVertexWriter, GeomTriangles, Geom, 
+    GeomNode, Vec4, LVector3, ModelPool
 )
 import random
 import math
+from random import uniform
+# Global variables are safe to import here
+from globals import ENTITIES 
+
 
 # --- Procedural Geometry Utility Functions ---
 
@@ -79,8 +83,6 @@ def create_sphere_geom(num_segments=32, radius=1.0):
     
     indices = GeomTriangles(Geom.UHStatic)
     
-    vertices = []
-    
     # A pólusok (legfelül és legalul) külön sorként vannak kezelve
     num_lat = num_segments
     num_lon = num_segments * 2 
@@ -97,16 +99,13 @@ def create_sphere_geom(num_segments=32, radius=1.0):
             y = math.sin(lon) * r
             
             v = Vec3(x, y, z)
-            vertices.append(v)
             vertex.addData3f(v)
             
             n = v.normalized()
             normal.addData3f(n)
             color.addData4f(1, 1, 1, 1)
 
-    # Indexek generálása (JAVÍTVA)
-    # i: aktuális szélességi fok (latitude, sor)
-    # j: aktuális hosszúsági fok (longitude, oszlop)
+    # Indexek generálása 
     for i in range(num_lat):
         for j in range(num_lon):
             
@@ -134,6 +133,7 @@ def create_sphere_geom(num_segments=32, radius=1.0):
 
 
 # --- Generátor osztályok ---
+# Ezeket az osztályokat importálja az entities/entity.py, ezért kell, hogy itt legyenek.
 
 class PlanetGenerator:
     """Generál egy Bolygó modellt (procedurális gömb)."""
@@ -171,7 +171,8 @@ class AsteroidGenerator:
         """Szimulálja a bányászat hatását a modellre (vizuális változás)."""
         
         # Helyi koordinátákra konvertálás
-        local_hit_pos = asteroid_model.getRelativePoint(render, hit_pos)
+        # A 'render' globalisan elérhető a ShowBase inicializálása után.
+        local_hit_pos = asteroid_model.getRelativePoint(render, hit_pos) 
         
         # NodePath létrehozása a gödör szimulációhoz (procedurális box)
         dark_spot = create_box_geom()
@@ -182,3 +183,81 @@ class AsteroidGenerator:
         dark_spot.setColor(0.2, 0.1, 0.05, 1) # Sötét, égett szín (kátrány)
         
         return True
+
+# --- GENERATION SYSTEM ---
+
+class GenerationSystem:
+    def __init__(self, game):
+        self.game = game
+        self.celestial_counter = 0
+
+    def get_celestial_class(self, entity_type):
+        """Dynamically imports and returns the correct Celestial subclass."""
+        # Fixes circular import issue by importing inside a function/method
+        from entities.celestial import Asteroid, Wreck, Stargate, Planet
+        
+        class_map = {
+            "Asteroid": Asteroid,
+            "Wreck": Wreck,
+            "Stargate": Stargate,
+            "Planet": Planet
+        }
+        
+        return class_map.get(entity_type, None)
+
+    def generate_celestial(self, entity_type, position, scale, color):
+        """Létrehoz egy égi objektumot és hozzáadja a globális listához."""
+        
+        CelestialClass = self.get_celestial_class(entity_type)
+        
+        if CelestialClass is None:
+            # Visszaesés a Generic Celestialre, ha a Celestial főosztályt importáltuk volna
+            print(f"[ERROR] Unknown celestial entity type: {entity_type}")
+            return None
+            
+        uid = f"CELESTIAL_{self.celestial_counter}"
+        self.celestial_counter += 1
+        
+        # Objektum létrehozása
+        # Megjegyzés: A CelestialClass konstruktora most már nem várja a 'color' argumentumot,
+        # mert a Celestial alosztályok maguk állítják be a modellt és a színt a generátorral.
+        celestial = CelestialClass(
+            self.game,
+            uid,
+            name=f"{entity_type} {self.celestial_counter}",
+            # A többi paramétert (pos, scale, color) az alosztály konstruktora fogja beállítani
+        )
+        
+        # Mivel a generátorok a konstruktorban futnak, itt csak a pozíciót állítjuk be
+        celestial.set_pos(position.x, position.y, position.z)
+        
+        # Hozzáadjuk a globális entitás listához
+        ENTITIES[uid] = celestial
+        
+        return celestial
+
+    def generate_solar_system(self):
+        """Egyszerű teszt naprendszer generálása."""
+        print("[GENERATION] Naprendszer generálása...")
+        
+        # 1. Csillagkapu (Stargate)
+        self.generate_celestial(
+            "Stargate",
+            Vec3(5000, 0, 0),
+            Vec3(50),
+            (0.5, 0.5, 1.0, 1.0)
+        )
+
+        # 2. Aszteroidák (20 darab)
+        for i in range(20):
+            pos = Vec3(uniform(-1000, 1000), uniform(-1000, 1000), uniform(-100, 100))
+            scale = Vec3(uniform(5, 20))
+            color = (0.7, 0.7, 0.7, 1.0)
+            self.generate_celestial(
+                "Asteroid",
+                pos,
+                scale,
+                color
+            )
+        
+        print("[GENERATION] Generálás befejezve.")
