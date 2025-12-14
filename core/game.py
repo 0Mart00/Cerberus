@@ -4,7 +4,7 @@ from panda3d.core import loadPrcFile
 import random
 
 from ui.menus import MainMenu
-from ui.hud import TargetListUI
+from ui.hud import HUD # <-- FRISSÍTVE: A generikus HUD osztály importálása
 from ui.windows import WindowManager
 
 from net.server import GameServer
@@ -27,7 +27,7 @@ class CerberusGame(ShowBase):
         self.window_manager = WindowManager(self)
         
         self.menu = MainMenu(self)
-        self.hud = TargetListUI(self)
+        self.hud = HUD(self) # <-- FRISSÍTVE: HUD példányosítása
         
         # Játékállapot
         self.local_ship = None
@@ -137,9 +137,15 @@ class CerberusGame(ShowBase):
             for entity in self.remote_ships.values():
                 entity.update(dt)
 
-            # HUD frissítése a távoli entitásokkal
-            self.hud.update_list(self.local_ship, self.remote_ships)
+            # FRISSÍTÉS: Frissítjük a játékos pozícióját az Overview Managerben
+            # Az Overview Manager (ami a self.hud.overview_manager-ben van) innen kapja meg az aktuális pozíciót
+            player_pos = self.local_ship.get_pos()
+            if hasattr(self.hud, 'overview_manager') and self.hud.overview_manager:
+                self.hud.overview_manager.player_pos = player_pos
 
+            # A self.hud.update_list hívás eltávolítva. 
+            # Az Overview Panel (a HUD belsejében) saját Task-ban, időzítve frissít.
+            
             # Pozíció küldése hálózaton (csak a hajó pozíciója érdekes)
             pos = self.local_ship.get_pos()
             dg = create_pos_datagram(self.my_id, pos.x, pos.y, pos.z)

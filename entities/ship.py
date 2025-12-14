@@ -81,7 +81,7 @@ class Ship(Entity):
 
 
         # Modell betöltése
-        self.load_model("models/SpaceShip", scale=1.0)
+        self.load_model("assets/models/SpaceShip", scale=1.0)
         
         if self.is_local:
             self.model.setColor(1, 1, 1, 1)
