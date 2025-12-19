@@ -48,3 +48,33 @@ class GameClient:
             if self.game.server and self.game.server.active:
                 # A Datagram már tartalmazza a nyers adatot, továbbküldjük
                 self.game.server.broadcast(datagram, exclude_conn=datagram.getConnection())
+
+    def send_ship_setup(self, ship_id, core_obj, support_obj, system_obj):
+        """Elküldi a teljes felszerelést a szervernek"""
+        # 1. Core küldése
+        dg = PyDatagram()
+        dg.addUint8(MSG_SYNC_CORE)
+        dg.addUint16(ship_id)
+        core_obj.pack(dg)
+        self.send(dg)
+
+        # 2. Support küldése
+        dg = PyDatagram()
+        dg.addUint8(MSG_SYNC_SUPPORT)
+        dg.addUint16(ship_id)
+        support_obj.pack(dg)
+        self.send(dg)
+
+    def process_msg(self, datagram):
+        iterator = PyDatagramIterator(datagram)
+        msg_type = iterator.getUint8()
+
+        if msg_type == MSG_SYNC_CORE:
+            target_ship_id = iterator.getUint16()
+            received_core = Core.unpack(iterator)
+            print(f"Szerver küldte: {target_ship_id} hajó új Core-t kapott: {received_core.name}")
+            self.game.update_remote_equipment(target_ship_id, "core", received_core)
+            
+            # Host/Relay logika
+            if self.game.server and self.game.server.active:
+                self.game.server.broadcast(datagram, exclude_conn=datagram.getConnection())
