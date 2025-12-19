@@ -12,6 +12,7 @@ from core.game import CerberusGame
 
 if __name__ == "__main__":
     app = CerberusGame()
+    
     try:
         app.run()
     except Exception as e:

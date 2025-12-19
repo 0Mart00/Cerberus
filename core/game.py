@@ -3,24 +3,24 @@ from direct.task import Task
 from panda3d.core import loadPrcFile
 import random
 
-from ui.menus import MainMenu
-from ui.hud import HUD # Helyes importálás: Nagybetűs 'HUD' osztályt importálunk
-from ui.windows import WindowManager
+from menus import MainMenu
+from windows import WindowManager
 
 from net.server import GameServer
 from net.client import GameClient
-from net.protocol import create_pos_datagram
+from net.protocol import create_pos_datagram, MSG_SYNC_CORE, MSG_SYNC_SUPPORT, MSG_SYNC_SYSTEM
 # Importáljuk az összes entitás osztályt
 from entities import Ship, Asteroid, Planet, Wreck, Stargate 
 
 class CerberusGame(ShowBase):
-    def __init__(self):
+    def __init__(self, item_db=None): # Módosítva: fogadja az item_db-t
         # Config betöltése
         loadPrcFile("config/settings.prc")
         ShowBase.__init__(self)
-        self.disableMouse() # Saját kamera irányítás
+        self.disableMouse() 
 
         # Rendszerek
+        self.item_db = item_db # Eltároljuk az adatbázist
         self.server = None
         self.client = GameClient(self)
         
@@ -28,7 +28,6 @@ class CerberusGame(ShowBase):
         
         # Hozzáadjuk a Base referenciát a Window Managerhez
         self.menu = MainMenu(self)
-        self.hud = HUD(self) 
         
         # Játékállapot
         self.local_ship = None
@@ -99,20 +98,54 @@ class CerberusGame(ShowBase):
 
     def start_gameplay(self):
         self.menu.hide()
-        self.hud.show() 
         
         # Saját hajó létrehozása
         self.local_ship = Ship(self, self.my_id, is_local=True, name="Hős", ship_type="Vezérhajó")
         self.local_ship.set_pos(0, 0, 0) # 0,0,0 az űr közepe
         
+        # --- ÚJ: Felszerelés inicializálása az adatbázisból ---
+        if self.item_db:
+            # Példa: Adunk a hajónak egy alap Core-t és System-et (ID alapján)
+            starter_core = self.item_db.get_core(1)
+            if starter_core:
+                self.local_ship.equip_core(starter_core)
+            
+            # Szinkronizáljuk a felszerelésünket a többiekkel
+            self.sync_my_equipment()
+
         # Kamera a hajóra (a Ship osztályban van a kamera pivot)
-        # HAGYJUK MEG EZT, DE A HUD MOST MÁR KEZELI A ZOOOMOT.
         self.camera.reparentTo(self.local_ship.model)
         self.camera.setPos(0, -30, 10)
         self.camera.lookAt(self.local_ship.model)
 
         # Loopok
         taskMgr.add(self.update_loop, "GameUpdateLoop")
+
+    def sync_my_equipment(self):
+        """Saját felszerelés elküldése a hálózaton"""
+        if not self.local_ship: return
+        
+        # Core küldése
+        if self.local_ship.core:
+            from direct.distributed.PyDatagram import PyDatagram
+            dg = PyDatagram()
+            dg.addUint8(MSG_SYNC_CORE)
+            dg.addUint16(self.my_id)
+            self.local_ship.core.pack(dg)
+            self.client.send(dg)
+            
+    def update_remote_equipment(self, sender_id, type_name, equipment_obj):
+        """Távoli hajó felszerelésének frissítése (Hálózatról érkezik)"""
+        if sender_id in self.remote_ships:
+            ship = self.remote_ships[sender_id]
+            if isinstance(ship, Ship):
+                if type_name == "core":
+                    ship.equip_core(equipment_obj)
+                elif type_name == "support":
+                    ship.equip_support(equipment_obj)
+                elif type_name == "system":
+                    ship.equip_system(equipment_obj)
+                print(f"[NET] {ship.name} felszerelése frissítve: {equipment_obj.name}")
 
     def select_target(self, entity_id):
         """HUD hívja meg: Beállítja az aktív célpontot a hajónak"""
@@ -137,19 +170,11 @@ class CerberusGame(ShowBase):
         if self.local_ship:
             self.local_ship.update(dt)
             
-            # Frissítjük az összes entitást (bár csak a Ship-ek csinálnak valamit)
+            # Frissítjük az összes entitást
             for entity in self.remote_ships.values():
                 entity.update(dt)
-
-            # FRISSÍTÉS: Frissítjük a játékos pozícióját az Overview Managerben
-            # A minta Overview nem használja az OverviewManager-t, de ha a jövőben
-            # a valódi adatokat akarjuk beilleszteni, ez a kódblokk kell.
-            # player_pos = self.local_ship.get_pos()
-            # if hasattr(self.hud, 'overview_manager') and self.hud.overview_manager:
-            #     self.hud.overview_manager.player_pos = player_pos
-
             
-            # Pozíció küldése hálózaton (csak a hajó pozíciója érdekes)
+            # Pozíció küldése hálózaton
             pos = self.local_ship.get_pos()
             dg = create_pos_datagram(self.my_id, pos.x, pos.y, pos.z)
             self.client.send(dg)
@@ -166,7 +191,6 @@ class CerberusGame(ShowBase):
 
         if sender_id not in self.remote_ships:
             print(f"Új hajó észlelve: ID {sender_id}")
-            # Hálózatról érkező új entitás mindig Ship (egyelőre)
             new_ship = Ship(self, sender_id, is_local=False, name=f"Ellenség-{sender_id}", ship_type="Drón")
             self.remote_ships[sender_id] = new_ship
         
