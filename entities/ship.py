@@ -16,6 +16,11 @@ class Ship(Entity):
         self.ship_type = ship_type
         self.is_local = is_local
         
+        # --- TAROLT TÁRGYAK (Tényleges felszerelés) ---
+        self.core = None
+        self.support = None
+        self.system = None
+
         # --- ALAP STATISZTIKÁK ---
         self.max_hp = 1000.0
         self.hp = self.max_hp
@@ -44,7 +49,8 @@ class Ship(Entity):
         self.modifiers = {
             'speed': 1.0,
             'agility': 1.0,
-            'scan_res': 1.0
+            'scan_res': 1.0,
+            'power_usage': 0
         }
 
         # --- FELSZERELÉS SLOTOK ---
@@ -56,7 +62,7 @@ class Ship(Entity):
         self.relics = []     
         
         # --- BÁNYÁSZAT ---
-        self.mining_lasers = [] # A MiningLaser komponensek itt lesznek
+        self.mining_lasers = [] 
 
         # --- FIZIKA VÁLTOZÓK ---
         self.velocity = Vec3(0, 0, 0)
@@ -67,18 +73,16 @@ class Ship(Entity):
         self.autopilot_mode = None
         self.target_entity = None
 
-        # --- ÜTKÖZÉS KEZELÉS (Raycasting) ---
+        # --- ÜTKÖZÉS KEZELÉS ---
         self.cTrav = CollisionTraverser()
         self.cQueue = CollisionHandlerQueue()
         self.ray = CollisionRay()
         self.ray_node = CollisionNode('miningRay')
         self.ray_node.addSolid(self.ray)
-        # Beállítjuk a maszkot, hogy csak az aszteroidákkal ütközzön (Bit 1)
         self.ray_node.setFromCollideMask(BitMask32.bit(1))
         self.ray_node.setIntoCollideMask(BitMask32.allOff())
         self.ray_np = render.attachNewNode(self.ray_node)
         self.cTrav.addCollider(self.ray_np, self.cQueue)
-
 
         # Modell betöltése
         self.load_model("assets/models/SpaceShip", scale=1.0)
@@ -86,15 +90,38 @@ class Ship(Entity):
         if self.is_local:
             self.model.setColor(1, 1, 1, 1)
             self.setup_controls()
-            self.setup_camera() # Ezt a hívást vizsgáljuk
+            self.setup_camera()
             self.equip_test_items()
-            
-            # Gyorsgomb a bányász lézernek
             self.accept("space", self.fire_mining_laser)
         else:
-            # Csak az aszteroidák kapnak ütközés detekciót, de NPC-knél is beállíthatjuk
             self.model.setCollideMask(BitMask32.bit(1))
 
+    # --- TÁRGY FELSZERELŐ METÓDUSOK ---
+
+    def equip_core(self, core_obj):
+        """Felszerel egy Core tárgyat és alkalmazza a bónuszait."""
+        self.core = core_obj
+        # Bónuszok érvényesítése a módosítókra (pl. sebesség bónusz 0.25 -> 1.25x szorzó)
+        self.modifiers['speed'] = 1.0 + core_obj.shipMaxVelocity
+        self.modifiers['agility'] = 1.0 + core_obj.shipAgility
+        # Itt lehetne frissíteni a HP-t/Capacitort is ha a Core adna ilyet
+        print(f"[SHIP] {self.name} felszerelte a magot: {core_obj.name} (Speed bonus: {core_obj.shipMaxVelocity})")
+
+    def equip_support(self, support_obj):
+        """Felszerel egy Support tárgyat."""
+        self.support = support_obj
+        # Pl. Pajzs bónusz érvényesítése
+        if support_obj.shieldBoostAmount > 0:
+            self.max_shield *= (1.0 + support_obj.shieldBoostAmount)
+            self.shield = self.max_shield
+        print(f"[SHIP] {self.name} felszerelte a support modult: {support_obj.name}")
+
+    def equip_system(self, system_obj):
+        """Felszerel egy System tárgyat."""
+        self.system = system_obj
+        # Pl. Energiahatékonyság vagy CPU csökkentés
+        self.modifiers['power_usage'] += system_obj.power_usage
+        print(f"[SHIP] {self.name} felszerelte a rendszert: {system_obj.name}")
 
     @property
     def max_speed(self):
@@ -109,21 +136,18 @@ class Ship(Entity):
         self.tactical_slots.append(TacticalSlot("Utánégető", effect_type="speed_boost", value=1.5))
         self.armor_slots.append(ArmorSlot("Titánium Lemez", armor_hp=200, resistance_type=DamageType.IMPACT, resistance_val=0.2))
         self.hull_augments.append(HullAugment("Raktér Bővítő", hull_hp=50))
-        self.relics.append(RelicSlot("Ősi Pajzs Generátor", relic_type=RelicType.PASSIVE, modifiers={'shield_max': 1.2}))
         
         # Teszt bányász lézer
         self.mining_lasers.append(MiningLaser())
         
-        print(f"[SHIP] Felszerelve: {len(self.weapon_mounts)} fegyver, {len(self.mining_lasers)} bányász lézer.")
+        print(f"[SHIP] Teszt itemek felszerelve.")
 
     def setup_controls(self):
-        # UI gyorsgombok (I, M)
         if hasattr(self.manager, 'window_manager'):
             self.accept("i", self.manager.window_manager.toggle_inventory)
             self.accept("m", self.manager.window_manager.toggle_market)
 
-    def setup_camera(self): # <--- HIÁNYZÓ METÓDUS PÓTLÁSA
-        # --- KAMERA IRÁNYÍTÁS (TPS Free Look) ---
+    def setup_camera(self):
         self.cam_dist = 40.0
         self.cam_h = 0.0
         self.cam_p = -20.0
@@ -150,59 +174,32 @@ class Ship(Entity):
     def adjust_zoom(self, amount):
         self.cam_dist = max(10.0, min(100.0, self.cam_dist + amount))
 
-
     def fire_mining_laser(self):
-        """Megpróbál bányász lézerrel lőni a célpont irányába (SPACE gomb)."""
-        if not self.mining_lasers:
-            print("[MINING] Nincs felszerelt bányász lézer.")
-            return
-
-        laser = self.mining_lasers[0] # Első lézer használata
-
-        # Létrehozzuk a Ray-t a hajó orrától előre
+        if not self.mining_lasers: return
+        laser = self.mining_lasers[0]
         start_pos = self.model.getPos()
         forward_vec = self.model.getQuat().getForward()
-
-        # Ray beállítása
         self.ray.setOrigin(start_pos)
         self.ray.setDirection(forward_vec)
-        
-        # Lekérdezés (Traversal)
         self.cTrav.traverse(render)
         
-        # Eredmények feldolgozása
         if self.cQueue.getNumEntries() > 0:
             self.cQueue.sortEntries()
-            entry = self.cQueue.getEntry(0) # Legközelebbi találat
-            
+            entry = self.cQueue.getEntry(0)
             hit_node = entry.getIntoNodePath().getParent()
-            
-            # Megkeressük, hogy melyik Entity-hez tartozik ez a NodePath
             hit_entity = None
-            # Mivel a remote_ships tartalmazza az aszteroidákat is a Hostnál:
             for entity in self.manager.remote_ships.values():
                 if entity.model == hit_node:
                     hit_entity = entity
                     break
-
             if hit_entity and hit_entity.entity_type == "Aszteroida":
                 hit_pos = entry.getSurfacePoint(render)
                 distance = (hit_pos - start_pos).length()
-
                 if distance <= laser.range:
-                    # Sikeres találat és távolságon belül
-                    
-                    # 1. Vizuális hatás (gödör/pitting)
                     if hasattr(hit_entity, 'apply_mining_damage'):
                         hit_entity.apply_mining_damage(hit_pos)
-                    
-                    # 2. Erőforrás gyűjtés (logikai hatás)
-                    resource_name = f"{laser.resource_type} Ásvány"
-                    self.manager.window_manager.add_item(resource_name, "Nyersanyag", laser.resource_yield, 20)
-                    print(f"[MINING] Bányászva {laser.resource_yield} {resource_name}.")
+                    self.manager.window_manager.add_item(f"{laser.resource_type} Ásvány", "Nyersanyag", laser.resource_yield, 20)
                     return
-
-        print("[MINING] Nincs találat vagy a cél túl messze van/nem bányászható.")
 
     def update(self, dt):
         if not self.is_local:
@@ -230,17 +227,14 @@ class Ship(Entity):
             dy = m.y - self.last_mouse_y
             self.last_mouse_x = m.x
             self.last_mouse_y = m.y
-            
             self.cam_h -= dx * 100.0
             self.cam_p = max(-80, min(80, self.cam_p + dy * 100.0))
 
         self.camera_pivot.setPos(self.model.getPos())
         self.camera_pivot.setHpr(self.cam_h, self.cam_p, 0)
-        
         cam = self.manager.camera
         if cam.getParent() != self.camera_pivot:
             cam.reparentTo(self.camera_pivot)
-            
         cam.setPos(0, -self.cam_dist, 0)
         cam.lookAt(self.camera_pivot)
     
@@ -250,23 +244,16 @@ class Ship(Entity):
         super().destroy()
 
     def update_orientation(self, dt):
-        """Kezeli a hajó forgását globális térben"""
         target_quat = None
         current_quat = self.model.getQuat()
-
-        # 1. Prioritás: Célpont felé fordulás
         if self.target_entity and self.target_entity.model:
             to_target = self.target_entity.get_pos() - self.model.getPos()
             if to_target.length_squared() > 0.1:
-                # JAVÍTÁS: A render-hez (globális tér) csatoljuk az ideiglenes node-ot,
-                # így a lookAt a valós, globális irányt számolja ki.
                 temp_node = render.attachNewNode("temp")
                 temp_node.setPos(self.model.getPos())
                 temp_node.lookAt(self.target_entity.model)
                 target_quat = temp_node.getQuat()
                 temp_node.removeNode()
-                
-        # 2. Prioritás: Mozgás irányába fordulás (ha nincs célpont)
         elif self.velocity.length() > 1.0:
             temp_node = render.attachNewNode("temp")
             temp_node.setPos(self.model.getPos())
@@ -275,28 +262,20 @@ class Ship(Entity):
             temp_node.removeNode()
 
         if target_quat:
-            # Interpoláció (N-Lerp)
             t = min(1.0, self.turn_speed * dt)
-            
-            # Legrövidebb út ellenőrzése (kvaternióknál a -Q és Q ugyanazt a forgást jelenti)
             if current_quat.dot(target_quat) < 0:
                 target_quat = target_quat * -1
-                
             new_quat = current_quat * (1.0 - t) + target_quat * t
             new_quat.normalize()
             self.model.setQuat(new_quat)
 
     def run_autopilot(self, dt):
         if not self.target_entity.model: return
-        
         target_pos = self.target_entity.get_pos()
         distance = (target_pos - self.model.getPos()).length()
         direction = (target_pos - self.model.getPos()).normalized()
-        
         self.velocity = Vec3(0,0,0)
-        
         mode = self.autopilot_mode if self.autopilot_mode else "follow"
-
         if mode == "follow":
             if distance > 2.0:
                 self.velocity = direction * (self.max_speed * 0.8)
@@ -306,5 +285,4 @@ class Ship(Entity):
             else:
                 orbit_vec = Vec3(-direction.y, direction.x, 0)
                 self.velocity = orbit_vec * (self.max_speed * 0.5)
-        
         self.model.setPos(self.model.getPos() + self.velocity * dt)

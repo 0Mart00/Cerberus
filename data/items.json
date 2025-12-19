@@ -1,0 +1,20 @@
+{
+    "cores": [
+        {
+            "id": 1,
+            "name": "Cerberus MK-I",
+            "description": "Standard kezdő mag.",
+            "shipMaxVelocity": 0.25,
+            "dmgRailgun": 0.10
+        },
+        {
+            "id": 2,
+            "name": "Hyper-Speed Core",
+            "description": "Gyorsasági mag felfedezőknek.",
+            "shipMaxVelocity": 0.60,
+            "dmgRailgun": -0.05
+        }
+    ],
+    "systems": [],
+    "supports": []
+}

@@ -13,6 +13,12 @@ class MainMenu:
         self.host_window = None
         self.setup_main_menu()
 
+    def list_items(self):
+        # Példa: az összes Core lekérése az adatbázisból
+        if self.game.item_db:
+            for core_id, core_obj in self.game.item_db.cores.items():
+                print(f"Tárgy a menüben: {core_obj.name} - {core_obj.description}")
+                
     def setup_main_menu(self):
         """Főmenü létrehozása."""
         self.frame = DirectFrame(
