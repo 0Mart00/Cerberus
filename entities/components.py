@@ -73,3 +73,42 @@ class MiningLaser(ShipComponent):
         self.range = range
         self.resource_yield = resource_yield
         self.resource_type = type
+
+class Component:
+    """Base class for all ship components."""
+    def __init__(self, name, level):
+        self.name = name
+        self.level = level
+        self.ship = None
+
+    def on_mount(self, ship):
+        self.ship = ship
+
+    def on_unmount(self):
+        self.ship = None
+
+class Engine(Component):
+    def __init__(self, name, level, max_speed, acceleration, turn_rate):
+        super().__init__(name, level)
+        self.max_speed = max_speed
+        self.acceleration = acceleration
+        self.turn_rate = turn_rate
+
+class Weapon(Component):
+    def __init__(self, name, level, damage, fire_rate, range):
+        super().__init__(name, level)
+        self.damage = damage
+        self.fire_rate = fire_rate
+        self.range = range
+        self.last_fired = 0
+
+class Shield(Component):
+    def __init__(self, name, level, capacity, recharge_rate):
+        super().__init__(name, level)
+        self.capacity = capacity
+        self.recharge_rate = recharge_rate
+
+class Cargo(Component):
+    def __init__(self, name, level, capacity):
+        super().__init__(name, level)
+        self.capacity = capacity

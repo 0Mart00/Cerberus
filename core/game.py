@@ -6,6 +6,7 @@ import random
 # UI Importok
 from ui.menus import MainMenu
 from ui.windows import WindowManager
+from systems.generation import GalaxyManager
 
 # Hálózati Importok
 from net.server import GameServer
@@ -39,6 +40,7 @@ class CerberusGame(ShowBase):
         self.server = None
         self.client = GameClient(self)
         self.window_manager = WindowManager(self)
+        self.galaxy_manager = WindowManager(self)
         
         # UI példányosítása
         self.menu = MainMenu(self)

@@ -1,13 +1,27 @@
 import random
 import heapq
 from panda3d import core as pc
+EVENT_SHIP_DAMAGED = "ship-damaged"
+EVENT_SHIP_DESTROYED = "ship-destroyed"
+EVENT_PLAYER_JOINED = "player-joined"
+EVENT_PLAYER_LEFT = "player-left"
 
+# Celestial Types
+TYPE_STAR = "Star"
+TYPE_PLANET = "Planet"
+TYPE_STATION = "Station"
+TYPE_ASTEROID = "Asteroid"
+
+MASK_SHIP = 0x1
+MASK_PROJECTILE = 0x2
+MASK_ENVIRONMENT = 0x4
 # --- Globális Entitás Tároló (Eredeti) ---
 ENTITIES = {}
 
 # --- Hálózati Konstansok (Eredeti) ---
 PORT = 9099
 MAX_RENDER_DISTANCE = 5000.0
+MAX_PLAYERS = 8
 
 # --- Játékos/Állapot Hivatkozások (Eredeti) ---
 LOCAL_SHIP = None 
@@ -41,6 +55,9 @@ ACTIVE_ROUTE = []
 CURRENT_PATH_COST = 0.0
 
 # --- SEGÉDFÜGGVÉNYEK ---
+# Network and System Constants
+
+# Event Names
 
 def get_system_pos(index):
     """Visszaadja egy adott rendszer pozícióját."""
