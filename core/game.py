@@ -33,7 +33,6 @@ class CerberusGame(ShowBase):
             pass
             
         ShowBase.__init__(self)
-        self.disableMouse() # Egyéni kamera irányítást használunk
 
         # Központi rendszerek
         self.item_db = item_db

@@ -90,19 +90,21 @@ def create_sphere_geom(num_segments=32, radius=1.0):
     return NodePath(node)
 
 
-# --- Játékobjektum Generátor Osztályok ---
+# --- Játékobjektum Generátor Osztályok (2x méretekkel) ---
 
 class PlanetGenerator:
-    """Bolygó modellek generátora (a fenti gömb geometriát használja)."""
-    def generate(self, name="Exoplanet", radius=100.0, base_color=(0.1, 0.3, 0.8, 1)):
+    """Bolygó modellek generátora."""
+    # Itt a radius 100.0-ról 200.0-ra lett növelve
+    def generate(self, name="Exoplanet", radius=200.0, base_color=(0.1, 0.3, 0.8, 1)):
         planet = create_sphere_geom(num_segments=32, radius=radius)
         planet.setName(name)
         planet.setColor(Vec4(*base_color))
         return planet
 
 class AsteroidGenerator:
-    """Aszteroida modellek generátora (a fenti doboz geometriát használja)."""
-    def generate(self, name="Asteroid", min_scale=2.0, max_scale=5.0):
+    """Aszteroida modellek generátora."""
+    # Itt a min_scale 2.0 -> 4.0 és a max_scale 5.0 -> 10.0 lett
+    def generate(self, name="Asteroid", min_scale=4.0, max_scale=10.0):
         asteroid = create_box_geom() 
         asteroid.setName(name)
         # Véletlenszerű torzítás a természetesebb hatásért
@@ -119,7 +121,8 @@ class AsteroidGenerator:
         local_hit_pos = asteroid_model.getRelativePoint(render_node, hit_pos) 
         dark_spot = create_box_geom()
         dark_spot.reparentTo(asteroid_model)
-        dark_spot.setScale(0.1)
+        # Itt a becsapódás nyomát is 0.1-ről 0.2-re növeltem
+        dark_spot.setScale(0.2)
         dark_spot.setPos(local_hit_pos)
         dark_spot.setColor(0.2, 0.1, 0.05, 1) # Égett hatás
         return True

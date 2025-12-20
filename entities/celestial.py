@@ -1,4 +1,4 @@
-from .entity import Entity
+from .ship import Entity
 from panda3d.core import BitMask32, Vec4
 import random
 # Import Generator classes (ezek felelnek a procedurális modellek létrehozásáért)
@@ -19,9 +19,6 @@ class Celestial(Entity):
         self.current_hp = max_hp
         self.generator = None # Generator instance if applicable
 
-    def update(self, dt):
-        # Static celestials usually don't need complex updates
-        pass
 
 # ==============================================================================
 # CELESTIAL BODIES (Asteroids, Planets, etc.)
@@ -60,12 +57,14 @@ class Planet(Celestial):
         
         # No mining/collision for planet
         self.model.setCollideMask(BitMask32.allOff())
+    def update(self, dt):
+        """A bolygók statikusak, de a metódus jelenléte megakadályozza a crash-t."""
+        pass
 
 class Wreck(Celestial):
     def __init__(self, manager, entity_id, name="Wreck", max_hp=100):
         super().__init__(manager, entity_id, name, "Wreck", max_hp=max_hp)
         
-        # Use procedural box fallback for wreck
         self.model = AsteroidGenerator().generate(name=name, min_scale=2.5, max_scale=2.5) 
         self.model.reparentTo(render)
         self.model.setColor(0.3, 0.2, 0.1, 1)
@@ -76,7 +75,6 @@ class Stargate(Celestial):
     def __init__(self, manager, entity_id, name="Stargate", max_hp=5000):
         super().__init__(manager, entity_id, name, "Stargate", max_hp=max_hp)
 
-        # Use procedural box fallback for stargate
         self.model = AsteroidGenerator().generate(name=name, min_scale=1.0, max_scale=1.0)
         self.model.reparentTo(render)
         self.model.setColor(0.8, 0.8, 1.0, 1)

@@ -7,7 +7,14 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
-from net.ItemDatabase import ItemDatabase
+# Importok a projekt struktúrája szerint
+try:
+    from net.ItemDatabase import ItemDatabase
+except ImportError:
+    # Fallback ha az adatbázis modul még nem elérhető
+    class ItemDatabase:
+        def load_from_json(self, path): pass
+
 from core.game import CerberusGame
 
 if __name__ == "__main__":
@@ -25,7 +32,9 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"[HIBA] Adatbázis hiba: {e}")
 
-    # 3. Játék indítása az adatbázis átadásával
+    # 3. Játék indítása
+    # Most már nem hívjuk meg a start_gameplay()-t, 
+    # így a CerberusGame saját menüje fog megjelenni indításkor.
     app = CerberusGame(item_db=item_db)
     
     try:
