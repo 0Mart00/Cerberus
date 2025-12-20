@@ -1,9 +1,9 @@
 import json
 import os
 # Javított importok: abszolút elérési utat használunk a 'data' mappából
-from .Core import ShipCore
-from .System import ShipSystem
-from .Support import ShipSupport
+from components.Core import ShipCore
+from components.Support import ShipSupport
+from components.System import ShipSystem
 
 class ItemDatabase:
     def __init__(self):
