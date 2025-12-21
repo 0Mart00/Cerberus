@@ -88,7 +88,7 @@ class Galaxy:
         self.current_system_id = None
         
         # 5 rendszer generálása
-        for i in range(5):
+        for i in range(100):
             self.systems[i] = SolarSystem(i, self.render_node, self.manager)
             
         # Kapuk összekötése
