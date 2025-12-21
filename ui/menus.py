@@ -1,28 +1,17 @@
-from direct.gui.DirectGui import DirectFrame, DirectButton, DirectEntry, DirectLabel, DGG
-from panda3d.core import LVector4 as LColor
-
-# UI Style Constants
-MENU_BG_COLOR = LColor(0.1, 0.1, 0.2, 0.8)
-BUTTON_COLOR = LColor(0.2, 0.4, 0.6, 1.0)
-TEXT_COLOR = LColor(0.8, 0.9, 1.0, 1.0)
-HIGHLIGHT_COLOR = LColor(0.4, 0.6, 0.8, 1.0)
+from direct.gui.DirectGui import DirectFrame, DirectButton, DirectLabel, DGG
+from .UITheme.Theme import UITheme  # Importáljuk az új témát
 
 class MainMenu:
     def __init__(self, base):
         self.base = base
         self.host_window = None
+        self.frame = None
         self.setup_main_menu()
 
-    def list_items(self):
-        # Példa: az összes Core lekérése az adatbázisból
-        if self.game.item_db:
-            for core_id, core_obj in self.game.item_db.cores.items():
-                print(f"Tárgy a menüben: {core_obj.name} - {core_obj.description}")
-                
     def setup_main_menu(self):
-        """Főmenü létrehozása."""
+        """Főmenü létrehozása a téma alapján."""
         self.frame = DirectFrame(
-            frameColor=MENU_BG_COLOR,
+            frameColor=UITheme.MENU_BG_COLOR,
             frameSize=(-0.7, 0.7, -0.7, 0.7),
             pos=(0, 0, 0),
             parent=self.base.aspect2d
@@ -31,61 +20,49 @@ class MainMenu:
         DirectLabel(
             parent=self.frame,
             text="CERBERUS ONLINE",
-            text_scale=0.15,
-            text_fg=TEXT_COLOR,
-            pos=(0, 0, 0.5)
+            text_scale=UITheme.TITLE_SCALE,
+            text_fg=UITheme.TEXT_COLOR,
+            pos=(0, 0, 0.5),
+            frameColor=(0,0,0,0) # Átlátszó háttér a szövegnek
         )
         
+        # Gombok létrehozása a téma stílusával
+        btn_style = UITheme.get_button_style()
         y_offset = 0.2
-        button_width = 0.4
-        button_height = 0.1
         
-        # Host Game Button
-        DirectButton(
-            parent=self.frame,
+        DirectButton(parent=self.frame,
             text="Játék Hosztolása",
-            text_scale=0.07,
-            text_fg=TEXT_COLOR,
-            frameColor=BUTTON_COLOR,
-            relief=DGG.FLAT,
-            frameSize=(-button_width, button_width, -button_height, button_height),
             command=self.show_host_window,
-            pos=(0, 0, y_offset)
+            pos=(0, 0, y_offset),
+            frameSize=(-0.4, 0.4, -0.1, 0.1),
+            **btn_style # Kicsomagoljuk a stílus szótárt
         )
         
-        # Join Game Button
         DirectButton(
             parent=self.frame,
             text="Csatlakozás",
-            text_scale=0.07,
-            text_fg=TEXT_COLOR,
-            frameColor=BUTTON_COLOR,
-            relief=DGG.FLAT,
-            frameSize=(-button_width, button_width, -button_height, button_height),
             command=self.show_join_window,
-            pos=(0, 0, y_offset - 0.25)
+            pos=(0, 0, y_offset - 0.25),
+            frameSize=(-0.4, 0.4, -0.1, 0.1),
+            **btn_style
         )
         
-        # Exit Button
         DirectButton(
             parent=self.frame,
             text="Kilépés",
-            text_scale=0.07,
-            text_fg=TEXT_COLOR,
-            frameColor=BUTTON_COLOR,
-            relief=DGG.FLAT,
-            frameSize=(-button_width, button_width, -button_height, button_height),
             command=self.base.userExit,
-            pos=(0, 0, y_offset - 0.5)
+            pos=(0, 0, y_offset - 0.5),
+            frameSize=(-0.4, 0.4, -0.1, 0.1),
+            **btn_style
         )
 
     def show_host_window(self):
-        """Host ablak megjelenítése."""
+        """Host ablak megjelenítése a téma színeivel."""
         if self.host_window:
             self.host_window.destroy()
             
         self.host_window = DirectFrame(
-            frameColor=MENU_BG_COLOR * 1.2,
+            frameColor=UITheme.WINDOW_BG_COLOR,
             frameSize=(-0.4, 0.4, -0.2, 0.2),
             pos=(0, 0, 0),
             parent=self.base.aspect2d,
@@ -95,54 +72,45 @@ class MainMenu:
         DirectLabel(
             parent=self.host_window,
             text="Szerver indítása?",
-            text_scale=0.08,
-            text_fg=TEXT_COLOR,
-            pos=(0, 0, 0.1)
+            text_scale=UITheme.LABEL_SCALE,
+            text_fg=UITheme.TEXT_COLOR,
+            pos=(0, 0, 0.1),
+            frameColor=(0,0,0,0)
         )
         
-        # Start Host Button
+        btn_style = UITheme.get_button_style()
+        # Kisebb szöveg a felugró ablakhoz
+        btn_style["text_scale"] = UITheme.SMALL_BUTTON_SCALE
+
         DirectButton(
             parent=self.host_window,
             text="Start Host",
-            text_scale=0.06,
-            text_fg=TEXT_COLOR,
-            frameColor=BUTTON_COLOR,
-            relief=DGG.FLAT,
+            command=self.start_host_and_close_window,
+            pos=(-0.15, 0, -0.1),
             frameSize=(-0.15, 0.15, -0.05, 0.05),
-            command=self.start_host_and_close_window, # ÚJ PARANCS
-            pos=(-0.15, 0, -0.1)
+            **btn_style
         )
         
-        # Cancel Button
         DirectButton(
             parent=self.host_window,
             text="Mégse",
-            text_scale=0.06,
-            text_fg=TEXT_COLOR,
-            frameColor=BUTTON_COLOR,
-            relief=DGG.FLAT,
-            frameSize=(-0.15, 0.15, -0.05, 0.05),
             command=self.host_window.destroy,
-            pos=(0.15, 0, -0.1)
+            pos=(0.15, 0, -0.1),
+            frameSize=(-0.15, 0.15, -0.05, 0.05),
+            **btn_style
         )
 
     def start_host_and_close_window(self):
-        """Szerver indítása és Host ablak bezárása."""
-        # A start_host metódus a CerberusGame-ben van.
-        if self.base.start_host():
-            # Ha a hosztolás sikeresen elindult, bezárjuk az ablakot.
+        if hasattr(self.base, 'start_host') and self.base.start_host():
             if self.host_window:
                 self.host_window.destroy()
                 self.host_window = None
 
-
     def show_join_window(self):
-        """Csatlakozás ablak megjelenítése."""
-        # Meglévő join_window logikája...
-        pass # A többi logika megtartva
+        pass
 
     def hide(self):
-        self.frame.hide()
+        if self.frame: self.frame.hide()
 
     def show(self):
-        self.frame.show()
+        if self.frame: self.frame.show()
