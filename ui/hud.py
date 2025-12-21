@@ -1,18 +1,18 @@
 from direct.gui.DirectGui import DirectFrame, DirectWaitBar, OnscreenText
-from panda3d.core import TextNode, Vec4
+from panda3d.core import TextNode
 
 class HUD:
     def __init__(self, base):
         self.base = base
         
-        # Main container for HUD elements
+        # Fő konténer az UI elemeknek
         self.container = DirectFrame(
             frameColor=(0, 0, 0, 0),
             frameSize=(-1, 1, -1, 1),
             parent=self.base.aspect2d
         )
         
-        # --- Player Stats (Bottom Left) ---
+        # --- Játékos Statisztikák (Bal alul) ---
         self.stats_frame = DirectFrame(
             parent=self.container,
             frameColor=(0, 0, 0, 0.5),
@@ -20,8 +20,10 @@ class HUD:
             pos=(-1.3, 0, -0.95)
         )
         
+        # Biztonságos ID lekérés (ha a base.my_id még nem létezne)
+        player_id = getattr(self.base, 'my_id', "Ismeretlen")
         self.player_name = OnscreenText(
-            text=f"PILÓTA: {self.base.my_id}",
+            text=f"PILÓTA: {player_id}",
             parent=self.stats_frame,
             scale=0.05,
             pos=(0.05, 0.18),
@@ -29,7 +31,7 @@ class HUD:
             align=TextNode.ALeft
         )
 
-        # Shield Bar
+        # Pajzs csík
         self.shield_bar = DirectWaitBar(
             text="PAJZS",
             value=100,
@@ -41,7 +43,7 @@ class HUD:
             frameColor=(0.1, 0.1, 0.1, 1)
         )
 
-        # Hull Bar
+        # Hajótest csík
         self.hull_bar = DirectWaitBar(
             text="HAJÓTEST",
             value=100,
@@ -53,7 +55,7 @@ class HUD:
             frameColor=(0.1, 0.1, 0.1, 1)
         )
 
-        # --- Target Info (Top Center) ---
+        # --- Célpont infó (Fent középen) ---
         self.target_frame = DirectFrame(
             parent=self.container,
             frameColor=(0, 0, 0, 0.5),
@@ -80,39 +82,40 @@ class HUD:
             align=TextNode.ACenter
         )
 
-        # Start update task
-        self.base.taskMgr.add(self.update, "HUDUpdateTask")
+        # FONTOS: Nem adunk hozzá saját task-ot (taskMgr.add), 
+        # mert a main.py update hívja meg kézzel!
 
-    def update(self, task):
-        if not self.base.local_ship:
-            return task.cont
-
-        # Update Player Bars
-        ship = self.base.local_ship
+    def update(self, dt):
+        """
+        Frissíti a HUD-ot. A dt a main.py-ból érkező delta time (float).
+        """
+        # Biztonságos ellenőrzés, hogy létezik-e a hajó
+        ship = getattr(self.base, 'local_ship', None)
         
-        # Hull
+        if not ship or ship.isEmpty():
+            return
+
+        # Életerő és Pajzs frissítése (ha az objektumon vannak ilyen változók)
         if hasattr(ship, 'current_hull') and hasattr(ship, 'max_hull'):
             self.hull_bar['range'] = ship.max_hull
             self.hull_bar['value'] = ship.current_hull
         
-        # Shield
         if hasattr(ship, 'current_shield') and hasattr(ship, 'max_shield'):
-            self.shield_bar['range'] = max(1, ship.max_shield) # Prevent div by zero
+            self.shield_bar['range'] = max(1, ship.max_shield)
             self.shield_bar['value'] = ship.current_shield
             
-        # Update Target Info
+        # Célpont infó frissítése
         target = getattr(ship, 'target', None)
-        if target:
+        if target and not target.isEmpty():
             self.target_frame.show()
-            self.target_name.setText(target.name)
+            # Ha van a célpontnak neve, azt írjuk ki, egyébként a NodePath nevét
+            name = getattr(target, 'name', target.getName())
+            self.target_name.setText(name)
             
-            dist = (target.get_pos() - ship.get_pos()).length()
+            dist = (target.getPos(self.base.render) - ship.getPos(self.base.render)).length()
             self.target_dist.setText(f"{dist:.1f} m")
         else:
             self.target_frame.hide()
 
-        return task.cont
-
     def destroy(self):
-        self.base.taskMgr.remove("HUDUpdateTask")
         self.container.destroy()

@@ -1,43 +1,106 @@
-import os
+from direct.showbase.ShowBase import ShowBase
+from panda3d.core import loadPrcFile, WindowProperties
 import sys
-from panda3d.core import loadPrcFile
 
-# Útvonalak beállítása, hogy minden modul elérhető legyen
-current_dir = os.path.dirname(os.path.abspath(__file__))
-if current_dir not in sys.path:
-    sys.path.insert(0, current_dir)
+# Importok a gyökérből (Cerberus/ prefix nélkül)
+from systems.movement import MovingSystem
+from systems.camera import CameraSystem
+from ui.hud import HUD
+from ui.menus import MainMenu
+from systems.galaxy import Galaxy
+from systems.gamestats import GameStats
+from globals import *
+from systems.galaxy import Galaxy
+class Game(ShowBase):
+    def __init__(self):
+        super().__init__()
+        
+        # Konfiguráció betöltése
+        loadPrcFile("config/settings.prc")
+        
+        props = WindowProperties()
+        props.setTitle("Cerberus Engine")
+        self.win.requestProperties(props)
+        
+        self.state = "GAME"
+        
+        # 1. Statisztikai rendszer (Idle számolás)
+        self.stats = GameStats()
+        
+        # 2. Galaxis rendszer (Optimalizált betöltéssel)
+        self.galaxy = Galaxy(self.render, self)
+        
+        # 3. Mozgás és Kamera rendszerek
+        self.moving_system = MovingSystem(self)
+        self.camera_system = CameraSystem(self)
 
-# Importok a projekt struktúrája szerint
-try:
-    from net.ItemDatabase import ItemDatabase
-except ImportError:
-    # Fallback ha az adatbázis modul még nem elérhető
-    class ItemDatabase:
-        def load_from_json(self, path): pass
 
-from core.game import CerberusGame
+        self.my_id = "1"
+        # Define the player ship
+        self.player = self.render.attachNewNode("PlayerShip") 
 
-if __name__ == "__main__":
-    # 1. Adatbázis inicializálása
-    item_db = ItemDatabase()
-    json_path = os.path.join(current_dir, 'data', 'items.json')
-    
-    # 2. Adatok betöltése JSON fájlból
-    try:
-        if os.path.exists(json_path):
-            item_db.load_from_json(json_path)
-            print("[RENDSZER] Tárgy adatbázis betöltve.")
+        # LINK THE PLAYER TO THE HUD HERE:
+        self.local_ship = self.player
+        # 4. UI elemek
+        self.hud = HUD(self)
+        self.menu = MainMenu(self)
+        
+        # Játékos hajó beállítása
+        self.player = self.render.find("**/PlayerShip")
+        if not self.player or self.player.isEmpty():
+            self.player = self.render.attachNewNode("PlayerShip")
+            # Megpróbáljuk a modelledet, ha nincs, marad a box
+            try:
+                model = loader.loadModel("assets/models/SpaceShip.egg")
+                model.reparentTo(self.player)
+                model.setScale(0.5)
+            except:
+                loader.loadModel("models/box").reparentTo(self.player)
+
+        # Első rendszer betöltése
+        self.galaxy.warp_player(self.player, 0)
+
+        # Irányítás
+        self.setup_controls()
+        
+        self.taskMgr.add(self.update, "MainUpdateTask")
+        print("[System] Motor kész. P gomb: Stargate ugrás.")
+
+    def setup_controls(self):
+        self.accept('escape', self.toggle_menu)
+        # P gomb az ugráshoz
+        self.accept('p', self.galaxy.warp_random, [self.player])
+        self.accept('P', self.galaxy.warp_random, [self.player])
+
+    def toggle_menu(self):
+        if self.state == "GAME":
+            self.state = "MENU"
+            self.menu.show()
         else:
-            print(f"[HIBA] Nem található az items.json itt: {json_path}")
-    except Exception as e:
-        print(f"[HIBA] Adatbázis hiba: {e}")
+            self.state = "GAME"
+            self.menu.hide()
 
-    # 3. Játék indítása
-    # Most már nem hívjuk meg a start_gameplay()-t, 
-    # így a CerberusGame saját menüje fog megjelenni indításkor.
-    app = CerberusGame(item_db=item_db)
-    
-    try:
-        app.run()
-    except Exception as e:
-        print(f"Kritikus hiba a futás során: {e}")
+    def update(self, task):
+        dt = globalClock.getDt()
+        
+        # Idle/Statisztika frissítése
+        self.stats.update()
+        
+        if self.state == "GAME":
+            # EREDETI RENDSZEREK UPDATE-JEI
+            self.moving_system.update(dt)
+            self.camera_system.update(dt)
+            self.hud.update(dt)
+            
+        return task.cont
+
+    def start_host(self):
+        print("[Network] Szerver indítása a 1234-es porton...")
+        self.state = "GAME"
+        self.menu.hide()
+        return True
+
+        
+if __name__ == "__main__":
+    game = Game()
+    game.run()
