@@ -7,6 +7,7 @@ from systems.movement import MovingSystem
 from systems.camera import CameraSystem
 from ui.hud import HUD
 from ui.menus import MainMenu
+from ui.map import GalaxyMap
 from systems.galaxy import Galaxy
 from systems.gamestats import GameStats
 from globals import *
@@ -29,7 +30,7 @@ class Game(ShowBase):
         
         # 2. Galaxis rendszer (Optimalizált betöltéssel)
         self.galaxy = Galaxy(self.render, self)
-        
+        self.galaxy_map = GalaxyMap(self, self.galaxy)
         # 3. Mozgás és Kamera rendszerek
         self.moving_system = MovingSystem(self)
         self.camera_system = CameraSystem(self)
@@ -68,9 +69,11 @@ class Game(ShowBase):
 
     def setup_controls(self):
         self.accept('escape', self.toggle_menu)
-        # P gomb az ugráshoz
         self.accept('p', self.galaxy.warp_random, [self.player])
         self.accept('P', self.galaxy.warp_random, [self.player])
+        # ADD HOZZÁ EZT A SORT:
+        self.accept('m', self.toggle_map)
+        self.accept('M', self.toggle_map)
 
     def toggle_menu(self):
         if self.state == "GAME":
@@ -79,6 +82,10 @@ class Game(ShowBase):
         else:
             self.state = "GAME"
             self.menu.hide()
+            
+    def toggle_map(self):
+        if hasattr(self, 'galaxy_map'):
+            self.galaxy_map.toggle()
 
     def update(self, task):
         dt = globalClock.getDt()
