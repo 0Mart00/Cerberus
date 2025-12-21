@@ -1,12 +1,15 @@
-import random
 import heapq
 from panda3d import core as pc
+
+# ─────────────────────────────────────────────
+# GLOBÁLIS KONSTANSOK (STATIKUS)
+# ─────────────────────────────────────────────
+
 EVENT_SHIP_DAMAGED = "ship-damaged"
 EVENT_SHIP_DESTROYED = "ship-destroyed"
 EVENT_PLAYER_JOINED = "player-joined"
 EVENT_PLAYER_LEFT = "player-left"
 
-# Celestial Types
 TYPE_STAR = "Star"
 TYPE_PLANET = "Planet"
 TYPE_STATION = "Station"
@@ -15,59 +18,127 @@ TYPE_ASTEROID = "Asteroid"
 MASK_SHIP = 0x1
 MASK_PROJECTILE = 0x2
 MASK_ENVIRONMENT = 0x4
-# --- Globális Entitás Tároló (Eredeti) ---
-ENTITIES = {}
 
-# --- Hálózati Konstansok (Eredeti) ---
 PORT = 9099
-MAX_RENDER_DISTANCE = 5000.0
 MAX_PLAYERS = 8
+MAX_RENDER_DISTANCE = 5000.0
 
-# --- Játékos/Állapot Hivatkozások (Eredeti) ---
-LOCAL_SHIP = None 
-IS_HOST = False   
-
-# --- GALAXIS KONSTANSOK ---
 NUM_SYSTEMS = 100
 MAX_COORD = 500
 NEIGHBOR_COUNT = 3
 MAP_SCALE = 0.001
 MAP_SIZE = 0.3
 
-# --- NAVIGÁCIÓS ÉS ZÓNA ADATOK (ÚJ) ---
-# Itt tároljuk az összes generált csillagrendszer adatát (név, pozíció, szín)
-SYSTEMS_DATA = []
 
-# Szomszédsági lista: Meghatározza, melyik zónából hova lehet ugrani
-# Formátum: { rendszer_id: [(szomszéd_id, távolság), ...] }
-ADJACENCY_LIST = {}
+# ─────────────────────────────────────────────
+# GALAXIS (NEM GLOBÁLIS ÁLLAPOT!)
+# ─────────────────────────────────────────────
 
-# Aktuális helyzet: A rendszer indexe, ahol a játékos éppen tartózkodik
-CURRENT_SYSTEM_INDEX = 0
+class Galaxy:
+    def __init__(self):
+        self.systems = []              # [{id, name, pos, color}]
+        self.adjacency = {}            # {id: [(neighbor_id, dist)]}
+        self.current_system = 0
+        self.target_system = None
+        self.active_route = []
+        self.current_path_cost = 0.0
 
-# Navigációs cél: A kiválasztott célrendszer indexe
-TARGET_SYSTEM_INDEX = None
+    # ───────────────
+    # RENDSZEREK
+    # ───────────────
 
-# Aktuális útvonal: Az A* által kiszámított indexek listája a célig
-ACTIVE_ROUTE = []
+    def add_system(self, name, pos, color):
+        sid = len(self.systems)
+        self.systems.append({
+            "id": sid,
+            "name": name,
+            "pos": pos,
+            "color": color
+        })
+        self.adjacency[sid] = []
+        return sid
 
-# Az aktuális útvonal összesített költsége (távolsága)
-CURRENT_PATH_COST = 0.0
+    def get_system_pos(self, index):
+        if 0 <= index < len(self.systems):
+            return self.systems[index]["pos"]
+        return pc.LVector3(0, 0, 0)
 
-# --- SEGÉDFÜGGVÉNYEK ---
-# Network and System Constants
+    # ───────────────
+    # GRÁF
+    # ───────────────
 
-# Event Names
+    def connect(self, a, b):
+        pa = self.systems[a]["pos"]
+        pb = self.systems[b]["pos"]
+        d = (pa - pb).length()
 
-def get_system_pos(index):
-    """Visszaadja egy adott rendszer pozícióját."""
-    if 0 <= index < len(SYSTEMS_DATA):
-        return SYSTEMS_DATA[index]['pos']
-    return pc.LVector3(0, 0, 0)
+        self.adjacency[a].append((b, d))
+        self.adjacency[b].append((a, d))
 
-def clear_navigation():
-    """Alaphelyzetbe állítja a navigációs terveket."""
-    global TARGET_SYSTEM_INDEX, ACTIVE_ROUTE, CURRENT_PATH_COST
-    TARGET_SYSTEM_INDEX = None
-    ACTIVE_ROUTE = []
-    CURRENT_PATH_COST = 0.0
+    # ───────────────
+    # NAVIGÁCIÓ
+    # ───────────────
+
+    def clear_navigation(self):
+        self.target_system = None
+        self.active_route.clear()
+        self.current_path_cost = 0.0
+
+    # ───────────────
+    # A*
+    # ───────────────
+
+    def heuristic(self, a, b):
+        pa = self.systems[a]["pos"]
+        pb = self.systems[b]["pos"]
+        return (pa - pb).length()
+
+    def find_path(self, start, goal):
+        open_set = [(0.0, start)]
+        came_from = {}
+        g_score = {start: 0.0}
+
+        while open_set:
+            _, current = heapq.heappop(open_set)
+
+            if current == goal:
+                return self._reconstruct(came_from, current), g_score[current]
+
+            for neighbor, dist in self.adjacency[current]:
+                tentative = g_score[current] + dist
+
+                if neighbor not in g_score or tentative < g_score[neighbor]:
+                    came_from[neighbor] = current
+                    g_score[neighbor] = tentative
+                    f = tentative + self.heuristic(neighbor, goal)
+                    heapq.heappush(open_set, (f, neighbor))
+
+        return [], float("inf")
+
+    def _reconstruct(self, came_from, current):
+        path = [current]
+        while current in came_from:
+            current = came_from[current]
+            path.append(current)
+        path.reverse()
+        return path
+
+    def navigate_to(self, target):
+        self.target_system = target
+        self.active_route, self.current_path_cost = self.find_path(
+            self.current_system,
+            target
+        )
+        return self.active_route
+
+
+# ─────────────────────────────────────────────
+# GAME STATE (RUNTIME)
+# ─────────────────────────────────────────────
+
+class GameState:
+    def __init__(self):
+        self.entities = {}
+        self.local_ship = None
+        self.is_host = False
+        self.galaxy = Galaxy()
