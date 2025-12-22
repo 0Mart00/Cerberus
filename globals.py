@@ -1,6 +1,5 @@
 import heapq
 from panda3d import core as pc
-
 # ─────────────────────────────────────────────
 # GLOBÁLIS KONSTANSOK (STATIKUS)
 # ─────────────────────────────────────────────
@@ -28,5 +27,4 @@ MAX_COORD = 500
 NEIGHBOR_COUNT = 3
 MAP_SCALE = 0.001
 MAP_SIZE = 0.3
-
 

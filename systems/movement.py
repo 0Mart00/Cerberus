@@ -39,30 +39,37 @@ class MovingSystem:
         self.key_map[key] = state
 
     def update(self, dt):
-        # Ha nincs játékos vagy IDLE állapot van, ne csináljon semmit
-        if not self.app.player or self.app.player.isEmpty():
+        # Ellenőrizzük, hogy a player létezik-e
+        if not self.app.player:
+            return
+
+        # MEGOLDÁS: Mindig a fizikai NodePath-ot használjuk a műveletekhez
+        # Ha a player egy wrapper osztály, akkor a .node attribútumot vesszük
+        target_np = self.app.player.node if hasattr(self.app.player, 'node') else self.app.player
+        
+        if target_np.isEmpty():
             return
             
         if hasattr(self.app, 'stats') and self.app.stats.is_idle:
             return
 
-        # Forgás (Heading és Roll)
+        # Forgás (A target_np-n végezzük)
         if self.key_map["left"]:
-            self.app.player.setH(self.app.player.getH() + self.turn_speed * dt)
+            target_np.setH(target_np.getH() + self.turn_speed * dt)
         if self.key_map["right"]:
-            self.app.player.setH(self.app.player.getH() - self.turn_speed * dt)
+            target_np.setH(target_np.getH() - self.turn_speed * dt)
             
         if self.key_map["roll_left"]:
-            self.app.player.setR(self.app.player.getR() - self.turn_speed * 0.5 * dt)
+            target_np.setR(target_np.getR() - self.turn_speed * 0.5 * dt)
         if self.key_map["roll_right"]:
-            self.app.player.setR(self.app.player.getR() + self.turn_speed * 0.5 * dt)
+            target_np.setR(target_np.getR() + self.turn_speed * 0.5 * dt)
 
-        # Mozgás (Előre/Hátra az Y tengelyen a Panda3D-ben)
+        # Mozgásvektor
         move_vec = Vec3(0, 0, 0)
         if self.key_map["forward"]:
             move_vec.setY(self.move_speed * dt)
         if self.key_map["backward"]:
             move_vec.setY(-self.move_speed * dt)
             
-        # Relatív mozgás a hajó saját orientációjához képest
-        self.app.player.setPos(self.app.player, move_vec)
+        # JAVÍTOTT HIVATKOZÁS: setPos(referencia_nodepath, vektor)
+        target_np.setPos(target_np, move_vec)

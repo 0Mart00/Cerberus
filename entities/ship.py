@@ -25,6 +25,8 @@ class Ship(Entity):
         self.current_hull = 1000.0
         self.max_shield = 0.0
         self.current_shield = 0.0
+        self.max_armor = 0.0
+        self.current_armor = 0.0
         self.speed = 0.0
         self.max_speed = 0.0
         self.turn_rate = 0.0
@@ -252,16 +254,33 @@ class Ship(Entity):
         print(f"[GAME] {self.name} hajó magja frissítve: {core_item.name}")
 
     def take_damage(self, amount):
-        """Sérüléskezelés."""
+        """Sérüléskezelés sorrendben: Pajzs -> Páncél -> Szerkezet."""
+        remaining_damage = amount
+
+        # 1. Pajzs elnyelése
         if self.current_shield > 0:
-            self.current_shield -= amount
-            if self.current_shield < 0:
-                self.current_hull += self.current_shield
+            if self.current_shield >= remaining_damage:
+                self.current_shield -= remaining_damage
+                remaining_damage = 0
+            else:
+                remaining_damage -= self.current_shield
                 self.current_shield = 0
-        else:
-            self.current_hull -= amount
+
+        # 2. Páncél elnyelése
+        if remaining_damage > 0 and self.current_armor > 0:
+            if self.current_armor >= remaining_damage:
+                self.current_armor -= remaining_damage
+                remaining_damage = 0
+            else:
+                remaining_damage -= self.current_armor
+                self.current_armor = 0
+
+        # 3. Szerkezet (Hull) sebzése
+        if remaining_damage > 0:
+            self.current_hull -= remaining_damage
             
         if self.current_hull <= 0:
+            self.current_hull = 0
             self.destroy()
 
     def destroy(self):
