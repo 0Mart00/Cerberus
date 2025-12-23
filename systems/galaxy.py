@@ -3,7 +3,7 @@ import math
 import string
 from panda3d.core import NodePath, Vec3
 from entities.celestial import Asteroid, Planet, Stargate
-
+import globals
 
 # Feltételezzük, hogy ezek az importok elérhetőek a projektedben
 # from entities.celestial import Asteroid, Planet, Stargate
@@ -101,7 +101,7 @@ class Galaxy:
         self.current_system_id = None
         self.adj_list = {} # Gráf struktúra
         
-        num_systems = 20 
+        num_systems = 20
         for i in range(num_systems):
             self.systems[i] = SolarSystem(i, self.render_node, self.manager)
             self.adj_list[i] = []
@@ -155,7 +155,6 @@ class Galaxy:
         # A játékost a kapu mellé tesszük, ne pont bele
         player_node.setPos(arrival_pos + Vec3(20, 20, 0))
         print(f"[Galaxy] Ugrás sikeres. Üdvözöljük a(z) {new_sys.name} szektorban!")
-
     def warp_random(self, player_node):
         neighbors = self.adj_list.get(self.current_system_id, [])
         if neighbors:

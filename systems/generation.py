@@ -1,12 +1,14 @@
+# Cerberus/systems/generation.py
+
+import random
+import math
 from panda3d.core import Vec3
 from random import uniform
-# Feltételezve, hogy a globals létezik
-from utils.geometry_utils import AsteroidGenerator, PlanetGenerator
+import Cerberus.globals as g
 
-try:
-    from globals import ENTITIES
-except ImportError:
-    ENTITIES = {}
+# Dinamikus importok az entitasokhoz a korkoros hivatkozasok elkerulesere a fuggvenyekben
+# De a top-level importokat is megtartjuk, ha szukseges
+from Cerberus.utils.geometry_utils import AsteroidGenerator, PlanetGenerator
 
 class GenerationSystem:
     def __init__(self, game):
@@ -14,10 +16,9 @@ class GenerationSystem:
         self.celestial_counter = 0
 
     def get_celestial_class(self, entity_type):
-        """Dinamikus import az entitás osztályokhoz a körkörös hivatkozás elkerülésére."""
-        # Itt importáljuk az entitásokat, amikor szükség van rájuk
+        """Dinamikus import az entitás osztályokhoz."""
         try:
-            from entities.celestial import Asteroid, Wreck, Stargate, Planet
+            from Cerberus.entities.celestial import Asteroid, Wreck, Stargate, Planet
             class_map = {
                 "Asteroid": Asteroid,
                 "Wreck": Wreck,
@@ -25,8 +26,8 @@ class GenerationSystem:
                 "Planet": Planet
             }
             return class_map.get(entity_type)
-        except ImportError:
-            print(f"[ERROR] Nem sikerült importálni az entitás osztályokat.")
+        except ImportError as e:
+            print(f"[ERROR] Nem sikerült importálni az entitás osztályokat: {e}")
             return None
 
     def generate_celestial(self, entity_type, position, scale=None, color=None):
@@ -38,7 +39,7 @@ class GenerationSystem:
         uid = f"CELESTIAL_{self.celestial_counter}"
         self.celestial_counter += 1
         
-        # Objektum példányosítása
+        # Objektum példányosítása - Az Entity alaposztaly regisztralja magat a g.ENTITIES-be
         celestial = CelestialClass(
             self.game,
             uid,
@@ -46,10 +47,11 @@ class GenerationSystem:
         )
         
         celestial.set_pos(position.x, position.y, position.z)
-        if scale:
-            celestial.model.setScale(scale) # Ha az entitás rendelkezik model attribútummal
+        
+        # Modell meretezes ha szukseges (ha az entitas root-ja alatt van a modell)
+        if scale and celestial.root:
+            celestial.root.setScale(scale)
             
-        ENTITIES[uid] = celestial
         return celestial
 
     def generate_solar_system(self):
@@ -60,15 +62,12 @@ class GenerationSystem:
         self.generate_celestial("Stargate", Vec3(5000, 0, 0))
 
         # Aszteroida mező generálása
-        for i in range(20):
-            pos = Vec3(uniform(-1000, 1000), uniform(-1000, 1000), uniform(-100, 100))
+        for i in range(200):
+            pos = Vec3(uniform(-10000, 10000), uniform(-10000, 10000), uniform(-1000, 1000))
             self.generate_celestial("Asteroid", pos)
         
         print(f"[GENERATION] {self.celestial_counter} objektum legenerálva.")
 
-import random
-from entities.celestial import Asteroid, Planet, Wreck, Stargate
-from entities.ship import Ship
 
 class GalaxyManager:
     """
@@ -81,13 +80,9 @@ class GalaxyManager:
 
     def generate_test_system(self):
         """
-        Generates a basic test environment with a sun, a few planets, 
-        and an asteroid field.
+        Generates a basic test environment.
         """
         print("[GALAXY] Teszt rendszer generálása...")
-        
-        # We use the base (CerberusGame) to handle the actual entity lists
-        # But we can trigger the logic from here or use the base's method
         if hasattr(self.base, 'spawn_test_entities'):
             self.base.spawn_test_entities()
         else:
@@ -95,20 +90,27 @@ class GalaxyManager:
 
     def _manual_spawn(self):
         """Fallback spawning logic if not handled by game core."""
+        from Cerberus.entities.celestial import Planet, Asteroid
+        
         # Central Planet
         p = Planet(self.base, "PLANET_MAIN", "Nexus Prime")
         p.set_pos(1000, 1000, 0)
-        self.base.remote_ships["PLANET_MAIN"] = p
+        # Itt a base.remote_ships-et is hasznalhatod, de az Entity __init__ mar betette a g.ENTITIES-be!
+        if hasattr(self.base, 'remote_ships'):
+            self.base.remote_ships["PLANET_MAIN"] = p
         
         # Some Asteroids
-        for i in range(5):
+        for i in range(5000):
             a_id = f"AST_{i}"
             a = Asteroid(self.base, a_id, f"Aszteroida-{i}")
             a.set_pos(random.uniform(-500, 500), random.uniform(200, 800), random.uniform(-20, 20))
-            self.base.remote_ships[a_id] = a
+            if hasattr(self.base, 'remote_ships'):
+                self.base.remote_ships[a_id] = a
+        
 
     def clear_system(self):
         """Removes all generated entities from the current system."""
-        for eid in list(self.base.remote_ships.keys()):
-            entity = self.base.remote_ships.pop(eid)
-            entity.destroy()
+        # Itt mar a g.ENTITIES-t is urithetjuk
+        entity_ids = list(g.ENTITIES.keys())
+        for eid in entity_ids:
+            g.ENTITIES[eid].destroy()
