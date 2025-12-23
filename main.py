@@ -2,16 +2,17 @@ from direct.showbase.ShowBase import ShowBase
 from panda3d.core import loadPrcFile, WindowProperties
 import sys
 
+# Egyéni rendszerek importálása
 from systems.movement import MovingSystem
 from systems.camera import CameraSystem
 from ui.menus import MainMenu
 from ui.map import GalaxyMap
-from ui.ShipHUD import ShipHUD # Importáld be a HUD-ot
+from ui.ShipHUD import ShipHUD 
+from ui.overview import Overview  # <--- Új import
 from systems.galaxy import Galaxy
 from systems.gamestats import GameStats
 from globals import *
 
-# 1. Hozzunk létre egy egyszerű osztályt a hajónak, ami bírja az attribútumokat
 class PlayerShipData:
     def __init__(self, node_path):
         self.node = node_path
@@ -20,7 +21,6 @@ class PlayerShipData:
         self.current_hull = 100.0
         self.name = "Cerberus One"
     
-    # Delegáljuk a NodePath metódusait, hogy úgy viselkedjen, mint egy NodePath
     def __getattr__(self, name):
         return getattr(self.node, name)
 
@@ -31,7 +31,7 @@ class Game(ShowBase):
         loadPrcFile("config/settings.prc")
         
         props = WindowProperties()
-        props.setTitle("Cerberus Engine")
+        props.setTitle("Cerberus Engine - Space Sim")
         self.win.requestProperties(props)
         
         self.state = "GAME"
@@ -43,32 +43,34 @@ class Game(ShowBase):
 
         self.my_id = "1"
 
-        # Játékos NodePath létrehozása
+        # Játékos setup
         player_node = self.render.attachNewNode("PlayerShip")
-        
-        # 2. Itt csomagoljuk be a NodePath-ot a ShipData osztályba
         self.local_ship = PlayerShipData(player_node)
-        self.player = self.local_ship # Így a self.player-en keresztül is elérhető
+        self.player = self.local_ship 
 
         try:
             model = loader.loadModel("assets/models/SpaceShip.egg")
             model.reparentTo(self.local_ship.node)
             model.setScale(0.5)
         except:
-            print("[Warning] SpaceShip modell nem található, box használata.")
+            print("[Warning] SpaceShip modell hiányzik, box használata.")
             loader.loadModel("models/box").reparentTo(self.local_ship.node)
 
-        # HUD példányosítás
+        # UI rendszerek inicializálása
         self.hud = ShipHUD(self, self.local_ship)
         self.hud.container.hide()
         self.hud_visible = False
+
+        # Overview panel példányosítása (Bootstrap logic + Game Theme)
+        self.overview = Overview(self)
+        self.overview.hide()
 
         self.menu = MainMenu(self)
         self.galaxy.warp_player(self.local_ship.node, 0)
 
         self.setup_controls()
         self.taskMgr.add(self.update, "MainUpdateTask")
-        print("[System] Motor kész. O: HUD | M: Térkép")
+        print("[System] Motor kész. O: HUD | M: Térkép | I: Overview")
 
     def setup_controls(self):
         self.accept('escape', self.toggle_menu)
@@ -76,13 +78,16 @@ class Game(ShowBase):
         self.accept('m', self.toggle_map)
         self.accept('o', self.toggle_hud)
         self.accept('O', self.toggle_hud)
+        self.accept('i', self.toggle_overview) # <--- Új gyorsbillentyű
+        self.accept('I', self.toggle_overview)
 
     def toggle_hud(self):
         self.hud_visible = not self.hud_visible
-        if self.hud_visible:
-            self.hud.container.show()
-        else:
-            self.hud.container.hide()
+        if self.hud_visible: self.hud.container.show()
+        else: self.hud.container.hide()
+
+    def toggle_overview(self):
+        self.overview.toggle()
 
     def toggle_menu(self):
         if self.state == "GAME":
@@ -104,7 +109,6 @@ class Game(ShowBase):
             self.moving_system.update(dt)
             self.camera_system.update(dt)
             
-            # Csak akkor frissítsük a HUD-ot, ha látható
             if self.hud_visible:
                 self.hud.update()
             
