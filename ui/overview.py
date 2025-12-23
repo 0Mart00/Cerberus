@@ -38,7 +38,9 @@ class Overview:
         self.frame3_data = [] 
         self.scrolled_frames = [] # Itt tartjuk számon a görgethető paneleket
 
-        self.container = DirectFrame(parent=self.base.aspect2d)
+        # JAVÍTÁS: A konténer ne DirectFrame legyen, hanem egy egyszerű NodePath.
+        # Így nem blokkolja az egér eseményeket (isOverRegion) az üres területeken.
+        self.container = self.base.aspect2d.attachNewNode("OverviewContainer")
         
         self._generate_data()
         self._setup_ui()
