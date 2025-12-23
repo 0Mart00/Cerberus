@@ -1,6 +1,6 @@
 from panda3d.core import (
     Vec3, NodePath, GeomVertexFormat, GeomVertexData, GeomVertexWriter, 
-    GeomTriangles, Geom, GeomNode, LVector3, Vec4
+    GeomTriangles, Geom, GeomNode, LVector3, Vec4, GeomVertexRewriter
 )
 import math
 import random
@@ -101,28 +101,75 @@ class PlanetGenerator:
         planet.setColor(Vec4(*base_color))
         return planet
 
-class AsteroidGenerator:
-    """Aszteroida modellek generátora."""
-    # Itt a min_scale 2.0 -> 4.0 és a max_scale 5.0 -> 10.0 lett
-    def generate(self, name="Asteroid", min_scale=4.0, max_scale=10.0):
-        asteroid = create_box_geom() 
-        asteroid.setName(name)
-        # Véletlenszerű torzítás a természetesebb hatásért
-        scale_x = random.uniform(min_scale, max_scale)
-        scale_y = random.uniform(min_scale, max_scale)
-        scale_z = random.uniform(min_scale, max_scale)
-        asteroid.setScale(scale_x, scale_y, scale_z)
-        # Sötétszürke szín beállítása
-        asteroid.setColor(random.uniform(0.3, 0.5), random.uniform(0.3, 0.5), random.uniform(0.3, 0.5), 1)
-        return asteroid
 
-    def apply_mining_hit(self, asteroid_model, hit_pos, render_node):
-        """Vizualizálja a bányászati találatot az aszteroidán."""
-        local_hit_pos = asteroid_model.getRelativePoint(render_node, hit_pos) 
-        dark_spot = create_box_geom()
-        dark_spot.reparentTo(asteroid_model)
-        # Itt a becsapódás nyomát is 0.1-ről 0.2-re növeltem
-        dark_spot.setScale(0.2)
-        dark_spot.setPos(local_hit_pos)
-        dark_spot.setColor(0.2, 0.1, 0.05, 1) # Égett hatás
-        return True
+
+class AsteroidGenerator:
+    """
+    Procedurális aszteroida háló generátor az Asteroids3.py alapján.
+    """
+    @staticmethod
+    def generate_asteroid_mesh(segments=12, scale_var=0.5):
+        """
+        Létrehoz egy egyedi, torzított gömböt aszteroidának.
+        """
+        format = GeomVertexFormat.getV3n3t2()
+        vdata = GeomVertexData('asteroid', format, Geom.UHStatic)
+        
+        vertex = GeomVertexWriter(vdata, 'vertex')
+        normal = GeomVertexWriter(vdata, 'normal')
+        texcoord = GeomVertexWriter(vdata, 'texcoord')
+        
+        # Gömb koordináták alapján generálunk pontokat
+        for i in range(segments + 1):
+            phi = math.pi * i / segments
+            for j in range(segments + 1):
+                theta = 2 * math.pi * j / segments
+                
+                # Alap gömb pont
+                x = math.sin(phi) * math.cos(theta)
+                y = math.sin(phi) * math.sin(theta)
+                z = math.cos(phi)
+                
+                # Véletlenszerű torzítás (Asteroids3.py logika)
+                noise = 1.0 + random.uniform(-scale_var, scale_var)
+                pos = Vec3(x, y, z) * noise
+                
+                vertex.addData3f(pos)
+                normal.addData3f(pos.normalized())
+                texcoord.addData2f(j / segments, i / segments)
+
+        # Háromszögek összeállítása
+        tris = GeomTriangles(Geom.UHStatic)
+        for i in range(segments):
+            for j in range(segments):
+                v1 = i * (segments + 1) + j
+                v2 = v1 + 1
+                v3 = (i + 1) * (segments + 1) + j
+                v4 = v3 + 1
+                tris.addVertices(v1, v3, v2)
+                tris.addVertices(v2, v3, v4)
+
+        geom = Geom(vdata)
+        geom.addPrimitive(tris)
+        
+        node = GeomNode('asteroid_geom')
+        node.addGeom(geom)
+        return node
+
+    @staticmethod
+    def deform_asteroid(geom_node, local_point, radius=1.0, strength=0.1):
+        """
+        Módosítja az aszteroida hálóját a megadott pont közelében (fúrás effekt).
+        """
+        for i in range(geom_node.getNumGeoms()):
+            geom = geom_node.modifyGeom(i)
+            vdata = geom.modifyVertexData()
+            vertex = GeomVertexRewriter(vdata, 'vertex')
+            
+            while not vertex.isAtEnd():
+                v = vertex.getData3f()
+                dist = (v - local_point).length()
+                if dist < radius:
+                    # A pontot a középpont felé toljuk (vagy kicsinyítjük)
+                    new_v = v * (1.0 - strength)
+                    vertex.setData3f(new_v)

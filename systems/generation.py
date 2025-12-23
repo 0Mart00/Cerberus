@@ -15,6 +15,28 @@ class GenerationSystem:
         self.game = game
         self.celestial_counter = 0
 
+    def generate_solar_system(self):
+        """
+        Generál egy aszteroida mezőt és egy játékos hajót.
+        """
+        print("[GENERATION] Mező létrehozása...")
+        
+        # 1. Aszteroidák (Asteroids3.py stílusban)
+        for i in range(15):
+            pos = Vec3(random.uniform(-50, 50), random.uniform(20, 100), random.uniform(-10, 10))
+            ast = Asteroid(self.game, f"AST_{i}", name=f"Roid-{i}")
+            ast.set_pos(pos)
+            # Automatikusan bekerül a g.ENTITIES-be az Entity __init__ miatt
+
+        print(f"[GENERATION] Kész. Entitások: {len(g.ENTITIES)}")
+
+    def spawn_debris(self, position):
+        """Létrehoz egy darab lootot a megadott helyen."""
+        from Cerberus.entities.celestial import Debris
+        d = Debris(self.game, f"LOOT_{random.randint(0,9999)}")
+        d.set_pos(position)
+        return d
+        
     def get_celestial_class(self, entity_type):
         """Dinamikus import az entitás osztályokhoz."""
         try:
@@ -62,7 +84,7 @@ class GenerationSystem:
         self.generate_celestial("Stargate", Vec3(5000, 0, 0))
 
         # Aszteroida mező generálása
-        for i in range(200):
+        for i in range(20):
             pos = Vec3(uniform(-10000, 10000), uniform(-10000, 10000), uniform(-1000, 1000))
             self.generate_celestial("Asteroid", pos)
         
@@ -100,7 +122,7 @@ class GalaxyManager:
             self.base.remote_ships["PLANET_MAIN"] = p
         
         # Some Asteroids
-        for i in range(5000):
+        for i in range(50):
             a_id = f"AST_{i}"
             a = Asteroid(self.base, a_id, f"Aszteroida-{i}")
             a.set_pos(random.uniform(-500, 500), random.uniform(200, 800), random.uniform(-20, 20))

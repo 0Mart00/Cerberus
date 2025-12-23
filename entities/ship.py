@@ -1,290 +1,182 @@
-import math
-from direct.actor.Actor import Actor
-from panda3d.core import Vec3, NodePath, CollisionNode, CollisionSphere, BitMask32, MouseButton
+# Cerberus/entities/ship.py
+
+import random
+from panda3d.core import Vec3, CollisionNode, CollisionSphere, CollisionRay, CollisionHandlerQueue, BitMask32
 from entities.entity import Entity
 from entities.components import Engine, Weapon, Shield, Cargo
-from globals import EVENT_SHIP_DAMAGED, EVENT_SHIP_DESTROYED
+import globals as g
 
 class Ship(Entity):
     def __init__(self, manager, ship_id, is_local=False, name="Unknown", ship_type="Unknown"):
         # Az Entity alaposztály meghívása (manager, id, name, type)
+        # Az Entity létrehozza a self.root NodePath-ot
         super().__init__(manager, ship_id, name, entity_type="Ship")
+        
+        # JAVÍTÁS: A MovingSystem a .node attribútumot keresi a movement.py 72. sorában.
+        # Itt explicit összekötjük a kettőt, hogy a mozgásrendszer ne haljon meg.
+        self.node = self.root
         
         self.is_local = is_local
         self.ship_type = ship_type
         
-        # --- Komponens slotok ---
-        self.engines = []
-        self.weapons = []
-        self.shields = []
-        self.cargos = []
-        self.core = None
-
-        # --- Statisztikák ---
+        # --- Komponensek és Statisztikák ---
+        self.engines, self.weapons, self.shields, self.cargos = [], [], [], []
         self.max_hull = 1000.0
         self.current_hull = 1000.0
         self.max_shield = 0.0
         self.current_shield = 0.0
-        self.max_armor = 0.0
-        self.current_armor = 0.0
-        self.speed = 0.0
-        self.max_speed = 0.0
-        self.turn_rate = 0.0
-
-        # --- Mozgási állapot ---
-        self.velocity = Vec3(0, 0, 0)
-        self.acceleration = 0.0
-        self.target_entity = None
-        self.autopilot_mode = None
-
-        # --- Vizuális elemek ---
-        self.model = None
-
-        # --- Vezérlés állapota ---
-        self.key_map = {
-            "forward": False,
-            "backward": False,
-            "left": False,
-            "right": False,
-            "roll_left": False,
-            "roll_right": False
-        }
         
-        # Kamera forgatás adatai
-        self.cam_dist = 40.0
-        self.cam_pitch = 15.0
-        self.cam_heading = 0.0
-        self.cam_pivot = None
-        self.last_mouse_pos = None # Egér előző pozíciójának tárolása
+        # Eszközök állapota
+        self.is_mining = False
+        self.is_tractoring = False
         
-        # Modell betöltése a megadott útvonalról
+        # Raycast a bányászathoz/vonósugárhoz
+        self.ray_queue = CollisionHandlerQueue()
+        self.picker_ray = CollisionRay()
+        
         self.load_model()
-        
-        # Ütközés detektálás setup
         self.setup_collision()
-
-        # Alapértelmezett komponensek a teszteléshez
+        
+        # Alapfelszerelés a tesztekhez
         self.mount_component(Engine("Standard Thruster", 1, 20.0, 50.0, 3.0))
         self.mount_component(Shield("Basic Shield", 1, 500.0, 5.0))
-
-        # Statisztikák inicializálása
         self.recalculate_stats()
 
         if self.is_local:
             self.setup_controls()
-            # Kamera pivot létrehozása a forgatáshoz
+            # Sugár setup (a hajó orrából előre)
             if self.app:
-                # Letiltjuk az alapértelmezett egérkezelést
-                self.app.disableMouse()
-                
-                # Létrehozunk egy külön pivotot a forgatáshoz
-                self.cam_pivot = self.root.attachNewNode("CameraPivot")
-                
-                # A kamerát a pivot alá rendeljük
-                self.app.camera.reparentTo(self.cam_pivot)
-                self.app.camera.setPos(0, -self.cam_dist, 8)
-                self.app.camera.lookAt(self.root)
-                
-                # Kamera frissítő task
-                self.app.taskMgr.add(self.update_camera, f"update_camera_{self.id}")
+                picker_node = CollisionNode('ship_ray')
+                picker_node.addSolid(self.picker_ray)
+                # Bit 1: Asteroids, Bit 2: Loot
+                picker_node.setFromCollideMask(BitMask32.bit(1) | BitMask32.bit(2))
+                picker_node.setIntoCollideMask(BitMask32.allOff())
+                self.picker_np = self.root.attachNewNode(picker_node)
+                self.app.cTrav.addCollider(self.picker_np, self.ray_queue)
 
     def load_model(self):
-        """A hajó vizuális modelljének betöltése a megadott assets útvonalról."""
-        if not self.app:
-            return
-
+        """A hajó vizuális modelljének betöltése."""
         try:
-            # A kért modell betöltése
             self.model = self.app.loader.loadModel("assets/models/SpaceShip.egg")
         except:
-            print("[HIBA] Nem található az assets/models/SpaceShip.egg! Fallback box betöltése.")
             self.model = self.app.loader.loadModel("models/box")
-        
-        if self.model:
-            self.model.reparentTo(self.root)
-            self.model.setScale(1.0)
+        self.model.reparentTo(self.root)
 
     def setup_collision(self):
         """Ütközési zóna beállítása."""
         coll_node = CollisionNode(f"ship_coll_{self.id}")
         coll_node.addSolid(CollisionSphere(0, 0, 0, 3))
-        mask = BitMask32(0x1) 
+        mask = BitMask32(0x1)
         coll_node.setIntoCollideMask(mask)
-        coll_node.setFromCollideMask(mask)
         self.c_np = self.root.attachNewNode(coll_node)
 
-    def mount_component(self, component):
-        """Alkatrészek felszerelése."""
-        if isinstance(component, Engine):
-            self.engines.append(component)
-        elif isinstance(component, Shield):
-            self.shields.append(component)
-        
-        component.on_mount(self)
-
-    def recalculate_stats(self):
-        """A felszerelt modulok alapján számolt maximális értékek."""
-        self.max_speed = 0
-        self.acceleration = 0
-        self.turn_rate = 0
-        self.max_shield = 0
-        
-        for eng in self.engines:
-            self.max_speed += eng.max_speed
-            self.acceleration += eng.acceleration
-            self.turn_rate += eng.turn_rate
-            
-        for sh in self.shields:
-            self.max_shield += sh.capacity
-        
-        self.current_shield = min(self.current_shield, self.max_shield)
-
     def setup_controls(self):
-        """Billentyűzet események regisztrálása."""
+        """Csak a hajó-specifikus eszközök bindjai (Bányászat, Vonósugár)."""
         if not self.app: return
+        self.app.accept("mouse1", self.set_mining, [True])
+        self.app.accept("mouse1-up", self.set_mining, [False])
+        self.app.accept("mouse3", self.set_tractoring, [True])
+        self.app.accept("mouse3-up", self.set_tractoring, [False])
 
-        self.app.accept("w", self.set_key, ["forward", True])
-        self.app.accept("w-up", self.set_key, ["forward", False])
-        self.app.accept("s", self.set_key, ["backward", True])
-        self.app.accept("s-up", self.set_key, ["backward", False])
-        self.app.accept("a", self.set_key, ["left", True])
-        self.app.accept("a-up", self.set_key, ["left", False])
-        self.app.accept("d", self.set_key, ["right", True])
-        self.app.accept("d-up", self.set_key, ["right", False])
-        self.app.accept("q", self.set_key, ["roll_left", True])
-        self.app.accept("q-up", self.set_key, ["roll_left", False])
-        self.app.accept("e", self.set_key, ["roll_right", True])
-        self.app.accept("e-up", self.set_key, ["roll_right", False])
-
-    def set_key(self, key, value):
-        self.key_map[key] = value
+    def set_mining(self, val): self.is_mining = val
+    def set_tractoring(self, val): self.is_tractoring = val
 
     def update(self, dt):
-        """A core/game.py update_loop-ja hívja meg minden frame-ben."""
+        """Hajó specifikus frissítések (bányászat, pajzs)."""
         if self.is_local:
-            self.handle_movement(dt)
+            if self.is_mining: self.fire_laser(dt)
+            if self.is_tractoring: self.use_tractor_beam(dt)
         
-        # Pajzs automatikus visszatöltése
-        for shield in self.shields:
+        # Pajzs regeneráció
+        for s in self.shields:
             if self.current_shield < self.max_shield:
-                self.current_shield += shield.recharge_rate * dt
-                self.current_shield = min(self.current_shield, self.max_shield)
+                self.current_shield = min(self.max_shield, self.current_shield + s.recharge_rate * dt)
 
-    def handle_movement(self, dt):
-        """TPS stílusú mozgás kezelése."""
-        # 1. Forgás (Heading/Yaw)
-        rotation_step = self.turn_rate * 25 * dt
-        if self.key_map["left"]:
-            self.root.setH(self.root.getH() + rotation_step)
-        if self.key_map["right"]:
-            self.root.setH(self.root.getH() - rotation_step)
-            
-        # 2. Dőlés (Roll)
-        roll_step = self.turn_rate * 30 * dt
-        if self.key_map["roll_left"]:
-            self.root.setR(self.root.getR() - roll_step)
-        if self.key_map["roll_right"]:
-            self.root.setR(self.root.getR() + roll_step)
+    def fire_laser(self, dt):
+        """Lézeres bányászat logika."""
+        self.picker_ray.setOrigin(0, 0, 0)
+        self.picker_ray.setDirection(0, 1, 0) # Előre (Y+)
+        if self.ray_queue.getNumEntries() > 0:
+            self.ray_queue.sortEntries()
+            entry = self.ray_queue.getEntry(0)
+            hit_np = entry.getIntoNodePath()
+            entity = hit_np.getPythonTag("entity")
+            if entity and entity.entity_type == "Asteroid":
+                local_pt = entity.geom_node_path.getRelativePoint(entry.getFromNodePath(), entry.getSurfacePoint(entry.getFromNodePath()))
+                entity.drill(local_pt)
 
-        # 3. Sebesség számítása
-        forward_vec = self.root.getQuat().getForward()
-        
-        target_vel = Vec3(0, 0, 0)
-        if self.key_map["forward"]:
-            target_vel = forward_vec * self.max_speed
-        elif self.key_map["backward"]:
-            target_vel = forward_vec * (-self.max_speed * 0.5)
-            
-        # 4. Tehetetlenség alkalmazása
-        diff = target_vel - self.velocity
-        if diff.length() > 0:
-            accel_val = self.acceleration * dt
-            if diff.length() < accel_val:
-                self.velocity = target_vel
-            else:
-                self.velocity += diff.normalized() * accel_val
-                
-        # 5. Pozíció tényleges frissítése
-        self.root.setPos(self.root.getPos() + self.velocity * dt)
+    def use_tractor_beam(self, dt):
+        """Vonósugár loot gyűjtéshez."""
+        self.picker_ray.setOrigin(0, 0, 0)
+        self.picker_ray.setDirection(0, 1, 0)
+        if self.ray_queue.getNumEntries() > 0:
+            for i in range(self.ray_queue.getNumEntries()):
+                entry = self.ray_queue.getEntry(i)
+                hit_np = entry.getIntoNodePath()
+                entity = hit_np.getPythonTag("entity")
+                if entity and entity.entity_type == "Loot":
+                    direction = self.root.getPos() - entity.get_pos()
+                    if direction.length() > 2.0:
+                        entity.set_pos(entity.get_pos() + direction.normalized() * 15.0 * dt)
+                    else: 
+                        entity.destroy()
+                        print("[SHIP] Loot collected!")
 
-    def update_camera(self, task):
-        """Kamera forgatása a hajó körül csak jobb egérgombbal, lokolás nélkül."""
-        if not self.app or not self.cam_pivot:
-            return task.cont
+    def mount_component(self, c):
+        """Alkatrész felszerelése."""
+        if isinstance(c, Engine): self.engines.append(c)
+        elif isinstance(c, Shield): self.shields.append(c)
+        c.on_mount(self)
 
-        # Recapture camera if parent changed
-        if self.app.camera.getParent() != self.cam_pivot:
-            self.app.camera.reparentTo(self.cam_pivot)
-            self.app.camera.setPos(0, -self.cam_dist, 8)
-            self.app.camera.lookAt(self.root)
-
-        # Egér állapot ellenőrzése
-        if self.app.mouseWatcherNode.hasMouse():
-            # Csak akkor forgatunk, ha a jobb gomb le van nyomva és nem UI felett vagyunk
-            if self.app.mouseWatcherNode.isButtonDown(MouseButton.three()) and \
-               self.app.mouseWatcherNode.getOverRegion() is None:
-                
-                # Aktuális egér pozíció lekérése (relatív -1 és 1 között)
-                mpos = self.app.mouseWatcherNode.getMouse()
-                cur_x, cur_y = mpos.getX(), mpos.getY()
-
-                if self.last_mouse_pos is not None:
-                    # Elmozdulás számítása az előző frame óta
-                    dx = (cur_x - self.last_mouse_pos[0]) * 100 # Érzékenység skálázása
-                    dy = (cur_y - self.last_mouse_pos[1]) * 100
-
-                    # Pivot értékeinek frissítése (0-360 fokban szabadon)
-                    self.cam_heading -= dx * 1.5
-                    self.cam_pitch = max(-89, min(89, self.cam_pitch + dy * 1.5))
-
-                    # Forgatás alkalmazása
-                    self.cam_pivot.setHpr(self.cam_heading, self.cam_pitch, 0)
-                
-                # Pozíció mentése a következő frame-hez
-                self.last_mouse_pos = (cur_x, cur_y)
-            else:
-                # Ha elengedjük a gombot, töröljük az előző pozíciót
-                self.last_mouse_pos = None
-        
-        return task.cont
-
-    def equip_core(self, core_item):
-        """Mag felszerelése."""
-        self.core = core_item
-        print(f"[GAME] {self.name} hajó magja frissítve: {core_item.name}")
+    def recalculate_stats(self):
+        """Összesített statisztikák újraszámolása."""
+        self.max_shield = sum(s.capacity for s in self.shields)
+        self.current_shield = min(self.current_shield, self.max_shield)
 
     def take_damage(self, amount):
-        """Sérüléskezelés sorrendben: Pajzs -> Páncél -> Szerkezet."""
-        remaining_damage = amount
-
-        # 1. Pajzs elnyelése
-        if self.current_shield > 0:
-            if self.current_shield >= remaining_damage:
-                self.current_shield -= remaining_damage
-                remaining_damage = 0
-            else:
-                remaining_damage -= self.current_shield
-                self.current_shield = 0
-
-        # 2. Páncél elnyelése
-        if remaining_damage > 0 and self.current_armor > 0:
-            if self.current_armor >= remaining_damage:
-                self.current_armor -= remaining_damage
-                remaining_damage = 0
-            else:
-                remaining_damage -= self.current_armor
-                self.current_armor = 0
-
-        # 3. Szerkezet (Hull) sebzése
-        if remaining_damage > 0:
-            self.current_hull -= remaining_damage
-            
-        if self.current_hull <= 0:
-            self.current_hull = 0
+        """Sérüléskezelés sorrendje: Pajzs -> Hull."""
+        if self.current_shield >= amount: 
+            self.current_shield -= amount
+        else:
+            amount -= self.current_shield
+            self.current_shield = 0
+            self.current_hull = max(0, self.current_hull - amount)
+        if self.current_hull <= 0: 
             self.destroy()
 
     def destroy(self):
         """Hajó megsemmisítése."""
-        if self.app:
-            self.app.messenger.send(EVENT_SHIP_DESTROYED, [self.id])
+        if self.app: 
+            self.app.messenger.send(g.EVENT_SHIP_DESTROYED, [self.id])
         super().destroy()
+
+    # --- NodePath Proxy Metódusok a MovingSystem hibáinak elkerülésére ---
+    # Ez lehetővé teszi, hogy a Ship objektumot közvetlenül NodePath-ként kezeljük a mozgásnál.
+    
+    def setPos(self, *args):
+        # Ha a MovingSystem 'target_np.setPos(target_np, ...)' formában hívja meg,
+        # és 'target_np' maga a Ship objektum, akkor az első argumentum (args[0]) a Ship lesz.
+        # Ezt ki kell cserélnünk a self.root NodePath-ra.
+        if len(args) > 0:
+            first_arg = args[0]
+            if hasattr(first_arg, 'root'):
+                # Cseréljük ki a wrappert a valódi NodePath-ra
+                new_args = list(args)
+                new_args[0] = first_arg.root
+                self.root.setPos(*new_args)
+                return
+            elif hasattr(first_arg, 'node'):
+                new_args = list(args)
+                new_args[0] = first_arg.node
+                self.root.setPos(*new_args)
+                return
+                
+        self.root.setPos(*args)
+
+    def setH(self, val): self.root.setH(val)
+    def setR(self, val): self.root.setR(val)
+    def setP(self, val): self.root.setP(val)
+    def getH(self): return self.root.getH()
+    def getR(self): return self.root.getR()
+    def getP(self): return self.root.getP()
+    def getPos(self): return self.root.getPos()

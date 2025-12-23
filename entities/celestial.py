@@ -1,4 +1,7 @@
 from entities.entity import Entity
+from utils.geometry_utils import AsteroidGenerator
+from panda3d.core import CollisionNode, CollisionSphere, BitMask32
+import random
 
 class CelestialBody(Entity):
     """Base class for non-ship objects in space."""
@@ -11,18 +14,52 @@ class CelestialBody(Entity):
     def load_model(self):
         pass
 
-class Asteroid(CelestialBody):
-    def __init__(self, manager, entity_id, name="Asteroid"):
-        super().__init__(manager, entity_id, name, "Asteroid", max_hp=500)
+# Cerberus/entities/celestial.py
 
-    def load_model(self):
-        # Use self.app instead of self.manager.base
-        if self.app:
-            self.model = self.app.loader.loadModel("models/misc/sphere")
-            if self.model:
-                self.model.reparentTo(self.root)
-                self.model.setScale(2)
-                self.model.setColor(0.4, 0.3, 0.2, 1)
+
+class Asteroid(Entity):
+    def __init__(self, manager, entity_id, name="Asteroid", scale=None):
+        super().__init__(manager, entity_id, name, entity_type="Asteroid")
+        
+        # Generálunk egy egyedi hálót
+        mesh_node = AsteroidGenerator.generate_asteroid_mesh()
+        self.geom_node_path = self.root.attachNewNode(mesh_node)
+        
+        # Véletlenszerű méret ha nincs megadva
+        s = scale if scale else random.uniform(2.0, 5.0)
+        self.root.setScale(s)
+        
+        # Ütközés a lézernek és a vonósugárnak
+        c_node = CollisionNode(f"col_{self.id}")
+        c_node.addSolid(CollisionSphere(0, 0, 0, 1.1)) # Kicsit nagyobb mint a mesh
+        c_node.setIntoCollideMask(BitMask32.bit(1))    # PICKABLE maszk
+        self.col_np = self.root.attachNewNode(c_node)
+        self.col_np.setPythonTag("entity", self)
+
+    def drill(self, local_impact_point):
+        """Meghívja a háló deformációt."""
+        AsteroidGenerator.deform_asteroid(
+            self.geom_node_path.node(), 
+            local_impact_point, 
+            radius=0.5, 
+            strength=0.2
+        )
+
+class Debris(Entity):
+    """Bányászatkor keletkező törmelék (Loot)."""
+    def __init__(self, manager, entity_id, name="Debris"):
+        super().__init__(manager, entity_id, name, entity_type="Loot")
+        # Egyszerű kocka vagy gömb lootnak
+        model = loader.loadModel("models/box")
+        model.reparentTo(self.root)
+        self.root.setScale(0.2)
+        self.root.setColor(0.8, 0.8, 0.2, 1) # Aranyos szín
+        
+        c_node = CollisionNode(f"col_{self.id}")
+        c_node.addSolid(CollisionSphere(0, 0, 0, 1.0))
+        c_node.setIntoCollideMask(BitMask32.bit(2)) # LOOT maszk
+        self.col_np = self.root.attachNewNode(c_node)
+        self.col_np.setPythonTag("entity", self)
 
 class Planet(CelestialBody):
     def __init__(self, manager, entity_id, name="Planet"):
