@@ -55,12 +55,21 @@ class Ship(Entity):
                 self.app.cTrav.addCollider(self.picker_np, self.ray_queue)
 
     def load_model(self):
-        """A hajó vizuális modelljének betöltése."""
-        try:
-            self.model = self.app.loader.loadModel("assets/models/SpaceShip.egg")
-        except:
-            self.model = self.app.loader.loadModel("models/box")
+        """A hajó vizuális modelljének betöltése és textúrázása."""
+        # 1. Modell betöltése
+        self.model = self.app.loader.loadModel("assets/models/SpaceShip.egg")
+        
+        # 2. JAVÍTOTT Skin (textúra) betöltése - a létező fájlra hivatkozva
+        ship_texture = self.app.loader.loadTexture("assets/textures/ship_skin_red.png")
+        
+        if ship_texture:
+            # 3. Textúra alkalmazása
+            self.model.setTexture(ship_texture, 1)
+            print("[SHIP] Textúra sikeresen betöltve: ship_skin_red.png")
+            
         self.model.reparentTo(self.root)
+                
+
 
     def setup_collision(self):
         """Ütközési zóna beállítása."""

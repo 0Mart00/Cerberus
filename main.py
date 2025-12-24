@@ -13,7 +13,7 @@ from ui.overview import Overview
 from systems.galaxy import Galaxy
 from systems.gamestats import GameStats
 from globals import *
-
+from entities.ship import Ship
 class PlayerShipData:
     def __init__(self, node_path):
         self.node = node_path
@@ -47,7 +47,7 @@ class Game(ShowBase):
 
         # Játékos setup
         player_node = self.render.attachNewNode("PlayerShip")
-        self.local_ship = PlayerShipData(player_node)
+        self.local_ship = Ship(self,player_node)
         self.player = self.local_ship 
 
         try:
