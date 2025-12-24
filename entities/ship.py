@@ -5,7 +5,8 @@ from panda3d.core import Vec3, CollisionNode, CollisionSphere, CollisionRay, Col
 from entities.entity import Entity
 from entities.components import Engine, Weapon, Shield, Cargo
 import globals as g
-
+from panda3d.core import Material
+from panda3d.core import TextureStage, TexGenAttrib # Fontos az új import!
 class Ship(Entity):
     def __init__(self, manager, ship_id, is_local=False, name="Unknown", ship_type="Unknown"):
         # Az Entity alaposztály meghívása (manager, id, name, type)
@@ -54,21 +55,29 @@ class Ship(Entity):
                 self.picker_np = self.root.attachNewNode(picker_node)
                 self.app.cTrav.addCollider(self.picker_np, self.ray_queue)
 
+
     def load_model(self):
         """A hajó vizuális modelljének betöltése és textúrázása."""
-        # 1. Modell betöltése
         self.model = self.app.loader.loadModel("assets/models/SpaceShip.egg")
-        
-        # 2. JAVÍTOTT Skin (textúra) betöltése - a létező fájlra hivatkozva
         ship_texture = self.app.loader.loadTexture("assets/textures/ship_skin_red.png")
         
         if ship_texture:
-            # 3. Textúra alkalmazása
-            self.model.setTexture(ship_texture, 1)
-            print("[SHIP] Textúra sikeresen betöltve: ship_skin_red.png")
+            ts = TextureStage('ts')
             
+            # JAVÍTÁS: TexGenAttrib használata a TextureStage helyett
+            self.model.setTexGen(ts, TexGenAttrib.MWorldPosition)
+            
+            # Ez vetíti rá a textúrát a világ koordinátái alapján
+            self.model.setTexProjector(ts, self.app.render, self.model)
+            
+            # Állítsd be a skálát, hogy ne legyen túl nyújtott
+            # Ha túl kicsi a textúra, növeld ezeket (pl. 1.0, 1.0)
+            self.model.setTexScale(ts, 0.5, 0.5) 
+            
+            self.model.setTexture(ts, ship_texture)
+            self.model.setShaderAuto()
+
         self.model.reparentTo(self.root)
-                
 
 
     def setup_collision(self):

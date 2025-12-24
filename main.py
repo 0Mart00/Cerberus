@@ -1,7 +1,7 @@
 from direct.showbase.ShowBase import ShowBase
 from panda3d.core import loadPrcFile, WindowProperties
 import sys
-
+from panda3d.core import AmbientLight, DirectionalLight
 # Egyéni rendszerek importálása
 from systems.movement import MovingSystem
 from systems.camera import CameraSystem
@@ -14,16 +14,7 @@ from systems.galaxy import Galaxy
 from systems.gamestats import GameStats
 from globals import *
 from entities.ship import Ship
-class PlayerShipData:
-    def __init__(self, node_path):
-        self.node = node_path
-        self.current_shield = 100.0
-        self.current_armor = 100.0
-        self.current_hull = 100.0
-        self.name = "Cerberus One"
-    
-    def __getattr__(self, name):
-        return getattr(self.node, name)
+
 
 class Game(ShowBase):
     def __init__(self):
@@ -73,6 +64,19 @@ class Game(ShowBase):
         self.taskMgr.add(self.update, "MainUpdateTask")
         print("[System] Motor kész. O: HUD | M: Térkép | I: Overview")
         print("[Combat] Egér Bal: Lézer | Egér Jobb: Vonósugár")
+
+        # 1. Halvány környezeti fény, hogy ne legyen koromfekete az árnyék
+        alight = AmbientLight('alight')
+        alight.setColor((0.2, 0.2, 0.2, 1))
+        alnp = self.render.attachNewNode(alight)
+        self.render.setLight(alnp)
+
+        # 2. Irányított fény (mint a Nap), ez fogja megcsillantani a hajó oldalát
+        dlight = DirectionalLight('dlight')
+        dlight.setColor((1.0, 1.0, 0.9, 1)) # Enyhe sárgás fehér
+        dlnp = self.render.attachNewNode(dlight)
+        dlnp.setHpr(45, -45, 0) # Szögből érkező fény
+        self.render.setLight(dlnp)
 
     def setup_controls(self):
         self.accept('escape', self.toggle_menu)
