@@ -14,7 +14,7 @@ from systems.galaxy import Galaxy
 from systems.gamestats import GameStats
 from globals import *
 from entities.ship import Ship
-
+from systems.ship_manager import ShipManager
 
 class Game(ShowBase):
     def __init__(self):
@@ -25,8 +25,7 @@ class Game(ShowBase):
         props = WindowProperties()
         props.setTitle("Cerberus Engine - Space Sim")
         self.win.requestProperties(props)
-        
-        self.state = "GAME"
+        self.ship_manager = ShipManager(self)
         self.stats = GameStats()
         self.galaxy = Galaxy(self.render, self)
         self.galaxy_map = GalaxyMap(self, self.galaxy)
@@ -34,20 +33,25 @@ class Game(ShowBase):
         self.camera_system = CameraSystem(self)
         self.combat_system = CombatSystem(self) # <--- ÚJ
 
+        self.state = "GAME"
         self.my_id = "1"
+
+        self.ship_manager.load_master_model(
+            "assets/models/SpaceShip.egg", 
+            "assets/textures/asteroid_diffuse.png"
+        )
 
         # Játékos setup
         player_node = self.render.attachNewNode("PlayerShip")
         self.local_ship = Ship(self,player_node)
         self.player = self.local_ship 
 
-        try:
-            model = loader.loadModel("assets/models/SpaceShip.egg")
-            model.reparentTo(self.local_ship.node)
-            model.setScale(0.5)
-        except:
-            print("[Warning] SpaceShip modell hiányzik, box használata.")
-            loader.loadModel("models/box").reparentTo(self.local_ship.node)
+
+        # 2. Példányosítjuk az "üres" Ship objektumot
+
+        # 3. A managerrel rárakjuk a kinézetet
+        self.ship_manager.setup_ship_visuals(self.local_ship)
+
 
         # UI rendszerek inicializálása
         self.hud = ShipHUD(self, self.local_ship)

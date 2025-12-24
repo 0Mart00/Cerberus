@@ -9,16 +9,14 @@ from panda3d.core import Material
 from panda3d.core import TextureStage, TexGenAttrib # Fontos az új import!
 class Ship(Entity):
     def __init__(self, manager, ship_id, is_local=False, name="Unknown", ship_type="Unknown"):
-        # Az Entity alaposztály meghívása (manager, id, name, type)
-        # Az Entity létrehozza a self.root NodePath-ot
+        # Az Entity létrehozza a self.root-ot
         super().__init__(manager, ship_id, name, entity_type="Ship")
-        
-        # JAVÍTÁS: A MovingSystem a .node attribútumot keresi a movement.py 72. sorában.
-        # Itt explicit összekötjük a kettőt, hogy a mozgásrendszer ne haljon meg.
+
         self.node = self.root
-        
         self.is_local = is_local
         self.ship_type = ship_type
+        self.model = None  # Kezdetben nincs vizuális megjelenés
+        
         
         # --- Komponensek és Statisztikák ---
         self.engines, self.weapons, self.shields, self.cargos = [], [], [], []
@@ -35,7 +33,6 @@ class Ship(Entity):
         self.ray_queue = CollisionHandlerQueue()
         self.picker_ray = CollisionRay()
         
-        self.load_model()
         self.setup_collision()
         
         # Alapfelszerelés a tesztekhez
@@ -54,31 +51,6 @@ class Ship(Entity):
                 picker_node.setIntoCollideMask(BitMask32.allOff())
                 self.picker_np = self.root.attachNewNode(picker_node)
                 self.app.cTrav.addCollider(self.picker_np, self.ray_queue)
-
-
-    def load_model(self):
-        """A hajó vizuális modelljének betöltése és textúrázása."""
-        self.model = self.app.loader.loadModel("assets/models/SpaceShip.egg")
-        ship_texture = self.app.loader.loadTexture("assets/textures/ship_skin_red.png")
-        
-        if ship_texture:
-            ts = TextureStage('ts')
-            
-            # JAVÍTÁS: TexGenAttrib használata a TextureStage helyett
-            self.model.setTexGen(ts, TexGenAttrib.MWorldPosition)
-            
-            # Ez vetíti rá a textúrát a világ koordinátái alapján
-            self.model.setTexProjector(ts, self.app.render, self.model)
-            
-            # Állítsd be a skálát, hogy ne legyen túl nyújtott
-            # Ha túl kicsi a textúra, növeld ezeket (pl. 1.0, 1.0)
-            self.model.setTexScale(ts, 0.5, 0.5) 
-            
-            self.model.setTexture(ts, ship_texture)
-            self.model.setShaderAuto()
-
-        self.model.reparentTo(self.root)
-
 
     def setup_collision(self):
         """Ütközési zóna beállítása."""
