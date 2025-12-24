@@ -21,18 +21,28 @@ class Asteroid(Entity):
     def __init__(self, manager, entity_id, name="Asteroid", scale=None):
         super().__init__(manager, entity_id, name, entity_type="Asteroid")
         
-        # Generálunk egy egyedi hálót
+        # 1. Mesh generálása
         mesh_node = AsteroidGenerator.generate_asteroid_mesh()
         self.geom_node_path = self.root.attachNewNode(mesh_node)
         
+        # --- TEXTÚRA BETÖLTÉSE ÉS ALKALMAZÁSA ---
+        try:
+            # Betöltjük a textúrát az assets mappából
+            tex = loader.loadTexture("assets/textures/asteroid_diffuse.png")
+            # Alkalmazzuk a generált mesh-re
+            self.geom_node_path.setTexture(tex, 1)
+        except:
+            print(f"[Warning] Asteroid textúra nem található a megadott helyen.")
+        # ----------------------------------------
+
         # Véletlenszerű méret ha nincs megadva
         s = scale if scale else random.uniform(2.0, 5.0)
         self.root.setScale(s)
         
-        # Ütközés a lézernek és a vonósugárnak
+        # Ütközés beállítása (marad az eredeti kód)
         c_node = CollisionNode(f"col_{self.id}")
-        c_node.addSolid(CollisionSphere(0, 0, 0, 1.1)) # Kicsit nagyobb mint a mesh
-        c_node.setIntoCollideMask(BitMask32.bit(1))    # PICKABLE maszk
+        c_node.addSolid(CollisionSphere(0, 0, 0, 1.1))
+        c_node.setIntoCollideMask(BitMask32.bit(1))
         self.col_np = self.root.attachNewNode(c_node)
         self.col_np.setPythonTag("entity", self)
 
