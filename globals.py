@@ -1,7 +1,22 @@
 # Cerberus/globals.py
+from panda3d.core import BitMask32
 
-# Global settings and state
-# Itt taroljuk a jatek allapotat es beallitasait
+MASK_WALL = BitMask32.bit(0)
+MASK_ASTEROID = BitMask32.bit(1)
+MASK_SHIP = BitMask32.bit(2)
+MASK_LOOT = BitMask32.bit(3)
+
+# Globális listák a rendszerek közötti kommunikációhoz
+TARGETABLE_OBJECTS = []  # Minden, amit el lehet találni
+LOOT_OBJECTS = []        # Gyűjthető tárgyak listája
+ACTIVE_PROJECTILES = []  # Lövedékek (ha lennének)
+
+
+LASER_DAMAGE = 10.0
+TRACTOR_SPEED = 40.0
+LASER_RANGE = 500.0
+
+
 
 # Kepernyo beallitasok
 WINDOW_WIDTH = 1280

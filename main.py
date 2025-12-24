@@ -5,10 +5,11 @@ import sys
 # Egyéni rendszerek importálása
 from systems.movement import MovingSystem
 from systems.camera import CameraSystem
+from systems.combat import CombatSystem  # <--- ÚJ
 from ui.menus import MainMenu
 from ui.map import GalaxyMap
 from ui.ShipHUD import ShipHUD 
-from ui.overview import Overview  # <--- Új import
+from ui.overview import Overview
 from systems.galaxy import Galaxy
 from systems.gamestats import GameStats
 from globals import *
@@ -40,6 +41,7 @@ class Game(ShowBase):
         self.galaxy_map = GalaxyMap(self, self.galaxy)
         self.moving_system = MovingSystem(self)
         self.camera_system = CameraSystem(self)
+        self.combat_system = CombatSystem(self) # <--- ÚJ
 
         self.my_id = "1"
 
@@ -61,7 +63,6 @@ class Game(ShowBase):
         self.hud.container.hide()
         self.hud_visible = False
 
-        # Overview panel példányosítása (Bootstrap logic + Game Theme)
         self.overview = Overview(self)
         self.overview.hide()
 
@@ -71,6 +72,7 @@ class Game(ShowBase):
         self.setup_controls()
         self.taskMgr.add(self.update, "MainUpdateTask")
         print("[System] Motor kész. O: HUD | M: Térkép | I: Overview")
+        print("[Combat] Egér Bal: Lézer | Egér Jobb: Vonósugár")
 
     def setup_controls(self):
         self.accept('escape', self.toggle_menu)
@@ -78,7 +80,7 @@ class Game(ShowBase):
         self.accept('m', self.toggle_map)
         self.accept('o', self.toggle_hud)
         self.accept('O', self.toggle_hud)
-        self.accept('i', self.toggle_overview) # <--- Új gyorsbillentyű
+        self.accept('i', self.toggle_overview)
         self.accept('I', self.toggle_overview)
 
     def toggle_hud(self):
@@ -108,6 +110,7 @@ class Game(ShowBase):
         if self.state == "GAME":
             self.moving_system.update(dt)
             self.camera_system.update(dt)
+            self.combat_system.update(dt) # <--- ÚJ
             
             if self.hud_visible:
                 self.hud.update()
