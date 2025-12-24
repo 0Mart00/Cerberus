@@ -9,12 +9,14 @@ class ShipCore:
     id: int = -1
     name: str = "Ismeretlen Mag"
     description: str = ""
+    price: int = 0 
+    metaLevel: int = 0
     slot_type: str = "Core"
     
     # --- Sebzés Bónuszok ---
     dmgPlasmaCannon: float = 0.0
-    dmgMissileLauncher: float = 0.0
     dmgRailgun: float = 0.0
+    dmgMissileLauncher: float = 0.0
     dmgIonBlaster: float = 0.0
     dmgDroneSwarm: float = 0.0
     dmgEmpEmitter: float = 0.0
@@ -100,6 +102,8 @@ class ShipSupport:
     id: int = -1
     name: str = "Ismeretlen Support Modul"
     description: str = ""
+    metaLevel: int = 0
+    price: int = 0
     slot_type: str = "Support"
     
     # --- Speciális Support Statok ---
@@ -145,6 +149,8 @@ class ShipSystem:
     id: int = -1
     name: str = "Ismeretlen Rendszer"
     description: str = ""
+    metaLevel: int = 0
+    price: int = 0
     slot_type: str = "System"
     
     # --- Speciális Rendszer Statok ---
