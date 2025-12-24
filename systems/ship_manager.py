@@ -8,115 +8,123 @@ class ShipManager:
     def __init__(self, game_app):
         self.app = game_app
         self.ships = {}
-        self.master_model = None
+        self.master_models = [] # Lista a betöltött modelleknek (tömb)
 
-    def load_master_model(self, model_url, texture_url):
+    def load_master_models(self, model_configs):
         """
-        Itt történik a varázslat: egyszeri betöltés és textúrázás.
+        Tömböt vár, amiben szótárak vannak a modellekkel és textúrákkal.
+        Példa: [{"model": "...", "tex": "..."}, {"model": "...", "tex": "..."}]
         """
-        # 1. Modell betöltése
-        self.master_model = self.app.loader.loadModel(model_url)
-        
-        # 2. Textúra ráhúzása (a te speciális világ-koordinátás módszereddel)
-        tex = self.app.loader.loadTexture(texture_url)
-        ts = TextureStage('assets/textures/ship_skin_red.png')
-        self.master_model.setTexGen(ts, TexGenAttrib.MWorldPosition)
-        self.master_model.setTexProjector(ts, self.app.render, self.master_model)
-        self.master_model.setTexScale(ts, 0.5, 0.5)
-        self.master_model.setTexture(ts, tex)
-        self.master_model.setShaderAuto()
-        
-        # Leválasztjuk, hogy ne jelenjen meg a (0,0,0)-n feleslegesen
-        self.master_model.detachNode()
-        print(f"[SYSTEM] Manager betöltötte a központi modellt: {model_url}")
+        for config in model_configs:
+            model_url = config.get("model")
+            texture_url = config.get("tex")
+            
+            try:
+                # Modell betöltése
+                m_node = self.app.loader.loadModel(model_url)
+                
+                # Textúrázás (Projected texture setup)
+                if texture_url:
+                    tex = self.app.loader.loadTexture(texture_url)
+                    ts = TextureStage('instanced_ts')
+                    # Világkoordináta alapú textúra vetítés (ahogy kérted)
+                    m_node.setTexGen(ts, TexGenAttrib.MWorldPosition)
+                    m_node.setTexProjector(ts, self.app.render, m_node)
+                    m_node.setTexScale(ts, 0.5, 0.5)
+                    m_node.setTexture(ts, tex)
+                    m_node.setShaderAuto()
+                
+                m_node.detachNode()
+                self.master_models.append(m_node)
+                print(f"[SYSTEM] Master modell hozzáadva a listához: {model_url}")
+            except Exception as e:
+                print(f"[ERROR] Nem sikerült betölteni a modellt ({model_url}): {e}")
 
-    def spawn_horde(self, count=10):
-        if not self.master_model:
-            print("[ERROR] Előbb be kell tölteni a modellt a load_master_model-lel!")
+    def spawn_horde(self, count=200):
+        """200 (vagy semennyi) hajó legenerálása a tömbből véletlenszerűen választva."""
+        if not self.master_models:
+            print("[ERROR] Nincs egyetlen master modell sem betöltve! Horda elmarad.")
             return
 
         for i in range(count):
             ship_id = 5000 + i
-            # Létrehozzuk az "üres" hajót
+            # Létrehozzuk az "üres" hajót (a Ship osztály nem tölt be semmit)
             new_ship = Ship(self.app, ship_id, name=f"Drone-{i}")
             
-            # KÍVÜLRŐL adjuk oda neki a modellt (Instancing)
-            new_ship.model = self.master_model.instanceTo(new_ship.root)
+            # VÉLETLENSZERŰ választás a tömbből
+            chosen_master = random.choice(self.master_models)
             
-            # Elhelyezés
+            # Instancing: ráakasztjuk a modellt a hajó root node-jára
+            new_ship.model = chosen_master.instanceTo(new_ship.root)
+            
+            # Szórás az űrben
             x = random.uniform(-1500, 1500)
             y = random.uniform(-1500, 1500)
-            z = random.uniform(-50, 50)
+            z = random.uniform(-100, 100)
             new_ship.root.setPos(x, y, z)
             
             self.ships[ship_id] = new_ship
+
+    def spawn_player(self, player_id, name="PlayerOne"):
+        """A játékos hajójának létrehozása és vizuális felépítése a tömb első elemével."""
+        player_ship = Ship(self.app, player_id, is_local=True, name=name)
+        
+        if self.master_models:
+            # A játékos alapértelmezetten az első (0.) modellt kapja a tömbből
+            player_ship.model = self.master_models[0].instanceTo(player_ship.root)
+            # Biztosítjuk, hogy a modell a root alatt legyen
+            player_ship.model.reparentTo(player_ship.root)
+        else:
+            print("[WARNING] Játékos modell nélkül jött létre (nincs master_models)!")
+            
+        return player_ship
+
+    def setup_ship_visuals(self, ship_instance, model_index=0):
+        """
+        Ráakasztja a tömb egyik modelljét egy létező Ship példányra.
+        :param model_index: Melyik modellt használja a tömbből (alapértelmezett: 0)
+        """
+        if not self.master_models:
+            print("[ERROR] Nincs betöltve master modell tömb!")
+            return
+
+        # Ha már volt rajta modell, eltávolítjuk
+        if hasattr(ship_instance, 'model') and ship_instance.model:
+            ship_instance.model.removeNode()
+
+        # Ellenőrizzük, hogy az index érvényes-e
+        idx = model_index if model_index < len(self.master_models) else 0
+        
+        # Kiválasztott modell példányosítása
+        ship_instance.model = self.master_models[idx].instanceTo(ship_instance.root)
+        print(f"[SYSTEM] Vizuális megjelenítés (Index: {idx}) hozzáadva: {ship_instance.name}")
+
     def update(self, dt):
-        if not self.app.local_ship: return
+        """LOD alapú frissítés: csak a közelieket frissítjük minden frame-ben."""
+        if not self.app.local_ship: 
+            return
+            
         player_pos = self.app.local_ship.get_pos()
+        frame_cnt = self.app.taskMgr.getFrameCount()
         
         for ship in self.ships.values():
-            # A hajó root NodePath-ját használjuk a távolsághoz
+            # Távolság négyzete (gyorsabb, mint a sima távolság)
             dist_sq = (ship.root.getPos() - player_pos).lengthSquared()
             
             if dist_sq < 800**2:
-                # KÖZEL: Teljes logika (ütközés, AI, pajzs)
+                # KÖZEL: Teljes AI és fizikai frissítés
                 ship.update(dt)
             elif dist_sq < 2500**2:
-                # MESSZE: Csak a pajzsot regeneráljuk néha, mozgás nincs
-                ship.current_shield = min(ship.max_shield, ship.current_shield + 1.0 * dt)
+                # KÖZEPES: Csak pajzs regeneráció, mozgás nincs, és csak minden 5. frame-ben
+                if frame_cnt % 5 == 0:
+                    if hasattr(ship, 'current_shield') and ship.current_shield < ship.max_shield:
+                        ship.current_shield = min(ship.max_shield, ship.current_shield + 1.0 * (dt * 5))
+            else:
+                # MESSZE: Semmilyen erőforrást nem használ
+                pass
 
-
-
-    def spawn_ships(self, count=200):
-        """Tömeges hajó generálás optimalizált módon."""
-        for i in range(count):
-            ship_id = f"DRONE_{i}"
-            # A Ship osztályodat használjuk, de módosítjuk a betöltést
-            new_ship = Ship(self.game, ship_id, is_local=False, name=f"Drone {i}")
-            
-            # 2. Vizuális optimalizáció: a modell lecserélése egy instance-re
-            if hasattr(new_ship, 'model'):
-                new_ship.model.removeNode() # Töröljük az egyedileg betöltöttet
-            
-            # Új példány (instance) készítése a mester modellből
-            instance = self.ship_master_model.instanceTo(new_ship.root)
-            new_ship.model = instance
-            
-            # Véletlenszerű pozíció
-            pos = Vec3(g.random.uniform(-1000, 1000), 
-                       g.random.uniform(-1000, 1000), 
-                       g.random.uniform(-100, 100))
-            new_ship.set_pos(pos)
-            
-            self.ships[ship_id] = new_ship
-
-    def setup_ship_visuals(self, ship_instance):
-        """
-        Ráakasztja a központi modellt egy létező Ship példányra.
-        Használható a játékoshoz és a drónokhoz is.
-        """
-        if not self.master_model:
-            print("[ERROR] Nincs master modell! Hívd meg a load_master_model-t.")
-            return
-
-        # Ha már volt rajta valami, leválasztjuk
-        if ship_instance.model:
-            ship_instance.model.removeNode()
-
-        # Instancing: a központi modell egy példányát adjuk oda
-        ship_instance.model = self.master_model.instanceTo(ship_instance.root)
-        print(f"[SYSTEM] Vizuális megjelenítés hozzáadva: {ship_instance.name}")
-
-    def spawn_player(self, player_id, name="PlayerOne"):
-        """Létrehozza a játékos hajóját és rárakja a modellt."""
-        from entities.ship import Ship
-        
-        # Itt a self.app-ot adjuk át managernek, így nem lesz AttributeError!
-        player_ship = Ship(self.app, player_id, is_local=True, name=name)
-        
-        # Modell hozzáadása, ha be van töltve
-        if self.master_model:
-            player_ship.model = self.master_model.instanceTo(player_ship.root)
-            player_ship.model.reparentTo(player_ship.root)
-            
-        return player_ship
+    def clear_all(self):
+        """Minden kezelt hajó törlése a világból."""
+        for ship in self.ships.values():
+            ship.destroy()
+        self.ships.clear()

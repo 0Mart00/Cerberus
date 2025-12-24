@@ -36,10 +36,14 @@ class Game(ShowBase):
         self.state = "GAME"
         self.my_id = "1"
 
-        self.ship_manager.load_master_model(
-            "assets/models/SpaceShip.egg", 
-            "assets/textures/asteroid_diffuse.png"
-        )
+        ship_variations = [
+            {"model": "assets/models/SpaceShip.egg", "tex": "assets/textures/ship_skin_red.png"},
+            {"model": "assets/models/SpaceShip.egg", "tex": "assets/textures/asteroid_diffuse.png"},
+            {"model": "assets/models/Stargate.egg", "tex": None} # Akár más modelleket is tehetsz bele
+        ]
+
+        # Betöltés a managerbe
+        self.ship_manager.load_master_models(ship_variations)
 
         # Játékos setup
         player_node = self.render.attachNewNode("PlayerShip")
