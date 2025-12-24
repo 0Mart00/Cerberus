@@ -5,14 +5,14 @@ MASK_WALL = BitMask32.bit(0)
 MASK_ASTEROID = BitMask32.bit(1)
 MASK_SHIP = BitMask32.bit(2)
 MASK_LOOT = BitMask32.bit(3)
-
+MASK_SELECTABLE = MASK_ASTEROID | MASK_SHIP
 # Globális listák a rendszerek közötti kommunikációhoz
 TARGETABLE_OBJECTS = []  # Minden, amit el lehet találni
 LOOT_OBJECTS = []        # Gyűjthető tárgyak listája
 ACTIVE_PROJECTILES = []  # Lövedékek (ha lennének)
+SELECTED_TARGET = None
 
-
-LASER_DAMAGE = 10.0
+LASER_DAMAGE = 1000.0
 TRACTOR_SPEED = 40.0
 LASER_RANGE = 500.0
 

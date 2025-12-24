@@ -125,7 +125,12 @@ class Game(ShowBase):
         self.state = "GAME"
         self.menu.hide()
         return True
-
+    def add_entity(self, entity):
+        """Regisztrál egy új entitást a játékba (pl. loot drop)."""
+        # Az Entity alaposztály __init__-je már beteszi a globals.ENTITIES-be,
+        # de itt végezhetsz extra hálózati vagy logikai műveleteket.
+        print(f"[System] Új entitás hozzáadva: {entity.name}")
+        return entity
 if __name__ == "__main__":
     game = Game()
     game.run()
