@@ -4,11 +4,11 @@ import random
 import math
 from panda3d.core import Vec3
 from random import uniform
-import Cerberus.globals as g
+import globals as g
 
 # Dinamikus importok az entitasokhoz a korkoros hivatkozasok elkerulesere a fuggvenyekben
 # De a top-level importokat is megtartjuk, ha szukseges
-from Cerberus.utils.geometry_utils import AsteroidGenerator, PlanetGenerator
+from utils.geometry_utils import AsteroidGenerator, PlanetGenerator
 
 class GenerationSystem:
     def __init__(self, game):

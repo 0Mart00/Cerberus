@@ -157,41 +157,28 @@ class AsteroidGenerator:
         return node
 
     @staticmethod
-    def deform_asteroid(geom_node, local_point, radius=0.3, strength=0.2):
+    def deform_asteroid(geom_node, local_point, radius=0.3, strength=0.15):
         """
-        Javított deformáció: a pontokat a becsapódás helyétől befelé toljuk, 
-        így kráter alakul ki ahelyett, hogy az egész aszteroida összeomlana.
+        Kráter képzése a becsapódás helyén.
         """
         for i in range(geom_node.getNumGeoms()):
             geom = geom_node.modifyGeom(i)
             vdata = geom.modifyVertexData()
             vertex = GeomVertexRewriter(vdata, 'vertex')
-            normal = GeomVertexRewriter(vdata, 'normal')
-            
-            # Az aszteroida középpontja (feltételezzük, hogy 0,0,0)
-            center = Vec3(0, 0, 0)
             
             while not vertex.isAtEnd():
                 v = vertex.getData3f()
                 dist = (v - local_point).length()
                 
                 if dist < radius:
-                    # Kiszámoljuk a deformáció mértékét (a széleken gyengébb)
                     falloff = (radius - dist) / radius
+                    # A belseje felé toljuk a csúcsot (0,0,0 irányba)
+                    # De csak egy kicsit, hogy ne lyukadjon át
+                    direction_to_center = v.normalized()
+                    new_v = v - (direction_to_center * strength * falloff)
                     
-                    # A pontot nem a 0,0,0 felé toljuk, hanem a becsapódási ponttól 
-                    # "lefelé" az aszteroida belseje felé.
-                    deformation_vec = (v - center).normalized() * (strength * falloff)
-                    new_v = v - deformation_vec
-                    
-                    # Ne engedjük, hogy a pont "túlszaladjon" a középponton
-                    if new_v.length() < 0.1: 
-                        new_v = v * 0.1
+                    # Megtartjuk a minimális vastagságot
+                    if new_v.length() < 0.2:
+                        new_v = direction_to_center * 0.2
                         
                     vertex.setData3f(new_v)
-                    # A normálist érdemes frissíteni, hogy a fényelés ne romoljon el
-                    # (Egyszerűsítve az új pozíció iránya lesz az új normális)
-                    normal.setData3f(new_v.normalized())
-                else:
-                    # Be kell léptetni a normal írót is, hogy szinkronban maradjon
-                    normal.getData3f()
